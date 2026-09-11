@@ -8,16 +8,6 @@ build
 .env
 .vercel
 .cache
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
+.claude
+
 

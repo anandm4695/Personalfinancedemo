@@ -19,6 +19,7 @@ export default defineConfig({
 
             if (fs.existsSync(apiPath)) {
               const originalSetHeader = res.setHeader.bind(res);
+              const originalEnd = res.end.bind(res);
               try {
                 // Clear node require cache to reload API on each request
                 delete require.cache[require.resolve(apiPath)];
@@ -71,11 +72,11 @@ export default defineConfig({
                 };
                 mockRes.json = (data: any) => {
                   originalSetHeader("Content-Type", "application/json");
-                  res.end(JSON.stringify(data));
+                  originalEnd(JSON.stringify(data));
                   return mockRes;
                 };
                 mockRes.send = (data: any) => {
-                  res.end(typeof data === "object" ? JSON.stringify(data) : String(data));
+                  originalEnd(typeof data === "object" ? JSON.stringify(data) : String(data));
                   return mockRes;
                 };
                 mockRes.setHeader = (name: string, value: string) => {
@@ -83,7 +84,7 @@ export default defineConfig({
                   return mockRes;
                 };
                 mockRes.end = (...args: any[]) => {
-                  return res.end(...args);
+                  return originalEnd(...args);
                 };
 
                 await handler(mockReq, mockRes);
@@ -92,7 +93,7 @@ export default defineConfig({
                 console.error("Local API execution error:", err);
                 res.statusCode = 500;
                 originalSetHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ error: "Local API execution error", details: String(err) }));
+                originalEnd(JSON.stringify({ error: "Local API execution error", details: String(err) }));
                 return;
               }
             }
