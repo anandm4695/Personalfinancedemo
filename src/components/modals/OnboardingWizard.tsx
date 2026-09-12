@@ -167,7 +167,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         boxSizing: "border-box",
       }}
     >
-      <div style={{ maxWidth: 580, width: "100%" }}>
+      <div style={{ maxWidth: 620, width: "100%" }}>
         {/* Brand header */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div
@@ -180,30 +180,32 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           >
             <BrandMark size={52} />
           </div>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 12px",
-              borderRadius: 9999,
-              background: "rgba(197, 161, 82, 0.12)",
-              border: "1px solid rgba(197, 161, 82, 0.28)",
-              fontSize: 11.5,
-              fontWeight: 700,
-              color: "#C5A152",
-              marginBottom: 8,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
-          >
-            <Sparkles size={12} /> Guided Wealth Setup
+          <div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 14px",
+                borderRadius: 9999,
+                background: "color-mix(in srgb, var(--t-gold) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--t-gold) 30%, transparent)",
+                fontSize: 11.5,
+                fontWeight: 800,
+                color: THEME.gold,
+                marginBottom: 8,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              <Sparkles size={12} /> Guided Wealth Setup
+            </div>
           </div>
           <h2
             style={{
               fontFamily: "var(--font-display)",
               fontSize: "clamp(24px, 5vw, 32px)",
-              fontWeight: 700,
+              fontWeight: 800,
               letterSpacing: "-0.02em",
               color: THEME.ink,
               marginBottom: 6,
@@ -211,7 +213,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           >
             Welcome to ArthaDrishti
           </h2>
-          <p style={{ color: THEME.muted, fontSize: 14, margin: 0 }}>
+          <p style={{ color: THEME.muted, fontSize: 14, margin: 0, fontWeight: 500 }}>
             Configure your private wealth dashboard in 5 simple steps.
           </p>
           <button
@@ -244,7 +246,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           style={{
             display: "flex",
             justifyContent: "space-between",
-            gap: 6,
+            gap: 8,
             marginBottom: 24,
           }}
         >
@@ -272,14 +274,18 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                       : isCurrent
                         ? THEME.accent
                         : "var(--surface-2)",
-                    transition: "all 0.3s ease",
+                    boxShadow: isCurrent
+                      ? `0 0 8px color-mix(in srgb, var(--t-accent) 50%, transparent)`
+                      : "none",
+                    transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
                   }}
                 />
                 <span
                   style={{
                     fontSize: 11,
-                    fontWeight: isCurrent ? 700 : 500,
+                    fontWeight: isCurrent ? 800 : 600,
                     color: isCurrent ? THEME.ink : isDone ? THEME.sage : THEME.muted,
+                    transition: "color 0.2s ease",
                   }}
                 >
                   {s.label}
@@ -290,12 +296,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         </div>
 
         {/* Card Body */}
-        <Card style={{ padding: "30px 28px", borderTop: `4px solid ${THEME.accent}`, boxShadow: "var(--shadow-lg)" }}>
+        <Card
+          style={{
+            padding: "32px 30px",
+            borderTop: `4px solid ${THEME.accent}`,
+            boxShadow: "0 16px 40px rgba(0,0,0,0.06)",
+            borderRadius: "var(--radius-xl)",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
             <div
               style={{
-                width: 44,
-                height: 44,
+                width: 46,
+                height: 46,
                 borderRadius: 12,
                 background: "color-mix(in srgb, var(--t-accent) 12%, transparent)",
                 border: "1px solid color-mix(in srgb, var(--t-accent) 25%, transparent)",
@@ -323,14 +336,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
               <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.01em", color: THEME.ink }}>
                 {STEPS[step].label}
               </div>
-              <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 2 }}>
+              <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 2, fontWeight: 500 }}>
                 {STEPS[step].desc}
               </div>
             </div>
           </div>
 
           {step === 0 && (
-            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 16 }}>
+            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 18 }}>
               <Field label="Your Full Name">
                 <input
                   style={inputStyle}
@@ -367,7 +380,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           )}
 
           {step === 1 && (
-            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 16 }}>
+            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 18 }}>
               <Field label="Bank Institution Name">
                 <input
                   style={inputStyle}
@@ -400,18 +413,44 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           )}
 
           {step === 2 && (
-            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 16 }}>
-              <Field label="Asset Category">
-                <select
-                  style={inputStyle}
-                  value={investment.type}
-                  onChange={(e) => setInvestment({ ...investment, type: e.target.value })}
-                >
-                  <option value="fd">Fixed Deposit (FD)</option>
-                  <option value="mf">Mutual Fund Scheme</option>
-                  <option value="stock">Direct Stock / Equity</option>
-                </select>
-              </Field>
+            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 18 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: THEME.muted, marginBottom: 8 }}>
+                  Asset Category
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                  {[
+                    { id: "fd", label: "Fixed Deposit", desc: "Guaranteed Return" },
+                    { id: "mf", label: "Mutual Fund", desc: "SIP / Lumpsum" },
+                    { id: "stock", label: "Direct Stock", desc: "Equity Shares" },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setInvestment({ ...investment, type: cat.id })}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: `1.5px solid ${investment.type === cat.id ? THEME.accent : THEME.line}`,
+                        background: investment.type === cat.id
+                          ? `color-mix(in srgb, var(--t-accent) 10%, transparent)`
+                          : "var(--surface-0)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 800, color: investment.type === cat.id ? THEME.accent : THEME.ink }}>
+                        {cat.label}
+                      </div>
+                      <div style={{ fontSize: 10, color: THEME.muted, marginTop: 2, fontWeight: 500 }}>
+                        {cat.desc}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <Field
                 label={
                   investment.type === "fd"
@@ -461,7 +500,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           )}
 
           {step === 3 && (
-            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 16 }}>
+            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 18 }}>
               <Field label="Milestone / Goal Name">
                 <input
                   style={inputStyle}
@@ -494,22 +533,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           )}
 
           {step === 4 && (
-            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 16 }}>
+            <div key={step} className="animate-fade-in-up" style={{ display: "grid", gap: 18 }}>
               <div
                 style={{
                   padding: "14px 16px",
-                  borderRadius: 10,
-                  background: "rgba(197, 161, 82, 0.08)",
-                  border: "1px solid rgba(197, 161, 82, 0.25)",
+                  borderRadius: 12,
+                  background: "color-mix(in srgb, var(--t-gold) 8%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--t-gold) 25%, transparent)",
                   display: "flex",
                   alignItems: "flex-start",
-                  gap: 10,
+                  gap: 12,
                   fontSize: 13,
                   color: THEME.ink,
                   lineHeight: 1.5,
+                  fontWeight: 500,
                 }}
               >
-                <ShieldCheck size={18} color="#C5A152" style={{ flexShrink: 0, marginTop: 2 }} />
+                <ShieldCheck size={20} color={THEME.gold} style={{ flexShrink: 0, marginTop: 2 }} />
                 <span>
                   Enable private, on-device AI financial insights powered by Google Gemini. Your personal identifiers stay strictly on your device.
                 </span>

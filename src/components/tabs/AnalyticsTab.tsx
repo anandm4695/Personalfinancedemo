@@ -3775,16 +3775,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   return (
     <div className="tab-content-enter">
       {/* ── Executive Header & Global Controls ── */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          gap: 16,
-          marginBottom: 16,
-        }}
-      >
+      <div className="exec-header-bar">
         <div>
           <SectionTitle sub="Consolidated wealth overview, financial vitals, and strategic intelligence">
             Executive Dashboard
@@ -3793,45 +3784,22 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {/* Active Profile Pill */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "6px 12px",
-              borderRadius: "var(--radius-md)",
-              background: "var(--surface-1)",
-              border: `1px solid ${THEME.line}`,
-              fontSize: 12,
-              fontWeight: 700,
-              color: THEME.ink,
-            }}
-          >
-            <span style={{ color: THEME.accent }}>●</span>
-            {activeProfile === "all"
-              ? "Family Consolidated"
-              : `${familyProfiles.find((p) => p.id === activeProfile)?.name || activeProfile}'s Portfolio`}
+          <div className="exec-badge-pill">
+            <span style={{ color: THEME.accent, fontSize: 10 }}>●</span>
+            <span>
+              {activeProfile === "all"
+                ? "Family Consolidated"
+                : `${familyProfiles.find((p) => p.id === activeProfile)?.name || activeProfile}'s Portfolio`}
+            </span>
           </div>
 
           {/* Market Freshness Indicator */}
           {(() => {
             if (!marketDataTs) {
               return (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "6px 12px",
-                    borderRadius: "var(--radius-md)",
-                    background: "var(--surface-1)",
-                    border: `1px solid ${THEME.line}`,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: THEME.muted,
-                  }}
-                >
-                  <span>○</span> Prices not loaded
+                <div className="exec-badge-pill" style={{ color: THEME.muted }}>
+                  <span style={{ fontSize: 10 }}>○</span>
+                  <span>Prices not loaded</span>
                 </div>
               );
             }
@@ -3847,22 +3815,19 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                     : "Prices stale";
             return (
               <div
+                className="exec-badge-pill"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 12px",
-                  borderRadius: "var(--radius-md)",
                   background: isStale
                     ? `color-mix(in srgb, var(--t-rust) 8%, transparent)`
                     : `color-mix(in srgb, var(--t-sage) 8%, transparent)`,
-                  border: `1px solid ${isStale ? "color-mix(in srgb, var(--t-rust) 20%, transparent)" : "color-mix(in srgb, var(--t-sage) 20%, transparent)"}`,
-                  fontSize: 12,
-                  fontWeight: 700,
+                  borderColor: isStale
+                    ? "color-mix(in srgb, var(--t-rust) 25%, transparent)"
+                    : "color-mix(in srgb, var(--t-sage) 25%, transparent)",
                   color: isStale ? THEME.rust : THEME.sage,
                 }}
               >
-                <span>●</span> {label}
+                <span style={{ fontSize: 10 }}>●</span>
+                <span>{label}</span>
               </div>
             );
           })()}
@@ -4413,97 +4378,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 {/* ─── Executive Wealth Hero Card ─────────────────────────── */}
                 <Card
                   variant="base"
-                  className="bento-col-12"
+                  className="bento-col-12 exec-hero-card"
                   style={{
-                    padding: "32px 36px",
                     background: isDark
                       ? "linear-gradient(135deg, color-mix(in srgb, var(--surface-0) 95%, var(--t-accent) 5%), var(--surface-0))"
                       : "linear-gradient(135deg, #ffffff 0%, color-mix(in srgb, var(--t-paper) 90%, var(--t-accent) 10%) 100%)",
-                    border: `1px solid ${THEME.line}`,
-                    borderTop: `4px solid ${THEME.accent}`,
-                    borderRadius: "var(--radius-xl)",
-                    position: "relative",
-                    overflow: "hidden",
-                    boxShadow: "0 12px 32px rgba(0,0,0,0.06)",
                   }}
                 >
-                  {/* Background Wealth Sparkline Area */}
-                  {(() => {
-                    const sparklineData = (() => {
-                      if (heroTrendPeriod === "All") return netWorthTrend;
-                      const n = heroTrendPeriod === "3M" ? 3 : heroTrendPeriod === "6M" ? 6 : 12;
-                      return netWorthTrend.slice(-n);
-                    })();
-                    if (sparklineData.filter((t: any) => t.value > 0).length < 2) return null;
-                    return (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 10,
-                          right: 16,
-                          width: "48%",
-                          maxWidth: 420,
-                          height: 150,
-                          opacity: isDark ? 0.35 : 0.25,
-                          zIndex: 0,
-                        }}
-                      >
-                        <div style={{ width: "100%", height: "100%", position: "relative" }}>
-                          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <AreaChart
-                              data={sparklineData}
-                              margin={{ top: 10, right: 10, bottom: 0, left: 0 }}
-                            >
-                              <defs>
-                                <linearGradient id="heroSparkGrad" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor={THEME.accent} stopOpacity={0.8} />
-                                  <stop offset="100%" stopColor={THEME.accent} stopOpacity={0.0} />
-                                </linearGradient>
-                              </defs>
-                              <Tooltip
-                                content={({ active, payload }: any) => {
-                                  if (active && payload && payload.length) {
-                                    const data = payload[0].payload;
-                                    return (
-                                      <div
-                                        style={{
-                                          background: "var(--surface-0)",
-                                          border: `1px solid ${THEME.line}`,
-                                          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-                                          borderRadius: 8,
-                                          padding: "6px 12px",
-                                          fontSize: 12,
-                                          fontWeight: 700,
-                                          color: THEME.ink,
-                                        }}
-                                      >
-                                        <div style={{ fontSize: 10, color: THEME.muted, textTransform: "uppercase" }}>
-                                          {data.month}
-                                        </div>
-                                        <div style={{ color: THEME.accent, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
-                                          {maskCurrencyInText(fmtINRFull(data.value), privacyMode)}
-                                        </div>
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                }}
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="value"
-                                stroke={THEME.accent}
-                                strokeWidth={2.5}
-                                fill="url(#heroSparkGrad)"
-                                dot={false}
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
                   {/* Hero Card Header */}
                   <div
                     style={{
@@ -4569,7 +4450,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                             key={r}
                             onClick={() => setHeroTrendPeriod(r)}
                             style={{
-                              padding: "3px 8px",
+                              padding: "4px 9px",
                               fontSize: 10,
                               fontWeight: 800,
                               borderRadius: 4,
@@ -4591,78 +4472,160 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                     </div>
                   </div>
 
-                  {/* Big Net Worth Number & Performance Trajectory */}
-                  <div style={{ position: "relative", zIndex: 1, marginBottom: 28 }}>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        fontSize: "clamp(42px, 5.5vw, 68px)",
-                        fontWeight: 900,
-                        lineHeight: 1,
-                        letterSpacing: "-0.04em",
-                        color: THEME.ink,
-                      }}
-                    >
-                      <Money value={animatedNetWorth} variant="full" />
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        marginTop: 14,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {momNetWorthDelta && (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 5,
-                            fontSize: 13,
-                            fontWeight: 800,
-                            padding: "4px 10px",
-                            borderRadius: "var(--radius-sm)",
-                            background: momNetWorthDelta.delta >= 0
-                              ? `color-mix(in srgb, var(--t-sage) 12%, transparent)`
-                              : `color-mix(in srgb, var(--t-rust) 12%, transparent)`,
-                            color: momNetWorthDelta.delta >= 0 ? THEME.sage : THEME.rust,
-                          }}
-                        >
-                          {momNetWorthDelta.delta >= 0 ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
-                          {momNetWorthDelta.delta >= 0 ? "+" : ""}
-                          <Money value={momNetWorthDelta.delta} variant="full" />{" "}
-                          ({momNetWorthDelta.pct >= 0 ? "+" : ""}
-                          {momNetWorthDelta.pct.toFixed(1)}% MoM)
-                        </div>
-                      )}
+                  {/* ── 2-Column Hero Body: Left = Big Number & Metrics, Right = Enclosed Sparkline ── */}
+                  <div className="exec-hero-grid" style={{ marginBottom: 28 }}>
+                    {/* Left: Net Worth Number & Performance Trajectory */}
+                    <div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontSize: "clamp(38px, 5.2vw, 64px)",
+                          fontWeight: 900,
+                          lineHeight: 1.05,
+                          letterSpacing: "-0.04em",
+                          color: THEME.ink,
+                        }}
+                      >
+                        <Money value={animatedNetWorth} variant="full" />
+                      </div>
 
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: 6,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          padding: "4px 10px",
-                          borderRadius: "var(--radius-sm)",
-                          background: `color-mix(in srgb, var(--t-accent) 8%, transparent)`,
-                          color: THEME.accent,
+                          gap: 10,
+                          marginTop: 14,
+                          flexWrap: "wrap",
                         }}
                       >
-                        <TrendingUp size={14} />
-                        {(
-                          ((metrics.mfValue + metrics.stockValue) / (metrics.totalAssets || 1)) *
-                          100
-                        ).toFixed(1)}% Equity Exposure
-                      </div>
+                        {momNetWorthDelta && (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
+                              fontSize: 13,
+                              fontWeight: 800,
+                              padding: "4px 10px",
+                              borderRadius: "var(--radius-sm)",
+                              background: momNetWorthDelta.delta >= 0
+                                ? `color-mix(in srgb, var(--t-sage) 12%, transparent)`
+                                : `color-mix(in srgb, var(--t-rust) 12%, transparent)`,
+                              color: momNetWorthDelta.delta >= 0 ? THEME.sage : THEME.rust,
+                            }}
+                          >
+                            {momNetWorthDelta.delta >= 0 ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+                            {momNetWorthDelta.delta >= 0 ? "+" : ""}
+                            <Money value={momNetWorthDelta.delta} variant="full" />{" "}
+                            ({momNetWorthDelta.pct >= 0 ? "+" : ""}
+                            {momNetWorthDelta.pct.toFixed(1)}% MoM)
+                          </div>
+                        )}
 
-                      <div style={{ fontSize: 13, color: THEME.muted, fontWeight: 600 }}>
-                        Assets: <Money value={metrics.totalAssets} variant="full" /> · Liabilities: <Money value={metrics.totalLiabilities} variant="full" />
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            padding: "4px 10px",
+                            borderRadius: "var(--radius-sm)",
+                            background: `color-mix(in srgb, var(--t-accent) 8%, transparent)`,
+                            color: THEME.accent,
+                          }}
+                        >
+                          <TrendingUp size={14} />
+                          {(
+                            ((metrics.mfValue + metrics.stockValue) / (metrics.totalAssets || 1)) *
+                            100
+                          ).toFixed(1)}% Equity Exposure
+                        </div>
+
+                        <div style={{ fontSize: 13, color: THEME.muted, fontWeight: 600 }}>
+                          Assets: <Money value={metrics.totalAssets} variant="full" /> · Liabilities: <Money value={metrics.totalLiabilities} variant="full" />
+                        </div>
                       </div>
                     </div>
+
+                    {/* Right: Enclosed Sparkline Panel */}
+                    {(() => {
+                      const sparklineData = (() => {
+                        if (heroTrendPeriod === "All") return netWorthTrend;
+                        const n = heroTrendPeriod === "3M" ? 3 : heroTrendPeriod === "6M" ? 6 : 12;
+                        return netWorthTrend.slice(-n);
+                      })();
+                      const hasSparkData = sparklineData.filter((t: any) => t.value > 0).length >= 2;
+
+                      return (
+                        <div className="exec-sparkline-panel">
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: THEME.muted }}>
+                              Wealth Trajectory ({heroTrendPeriod})
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: THEME.accent }}>
+                              {sparklineData.length} checkpoints
+                            </span>
+                          </div>
+
+                          <div style={{ flex: 1, width: "100%", minHeight: 120 }}>
+                            {hasSparkData ? (
+                              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                <AreaChart data={sparklineData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                                  <defs>
+                                    <linearGradient id="heroSparkGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor={THEME.accent} stopOpacity={0.65} />
+                                      <stop offset="100%" stopColor={THEME.accent} stopOpacity={0.02} />
+                                    </linearGradient>
+                                  </defs>
+                                  <Tooltip
+                                    content={({ active, payload }: any) => {
+                                      if (active && payload && payload.length) {
+                                        const data = payload[0].payload;
+                                        return (
+                                          <div
+                                            style={{
+                                              background: "var(--surface-0)",
+                                              border: `1px solid ${THEME.line}`,
+                                              boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+                                              borderRadius: 8,
+                                              padding: "6px 12px",
+                                              fontSize: 12,
+                                              fontWeight: 700,
+                                              color: THEME.ink,
+                                            }}
+                                          >
+                                            <div style={{ fontSize: 10, color: THEME.muted, textTransform: "uppercase" }}>
+                                              {data.month}
+                                            </div>
+                                            <div style={{ color: THEME.accent, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+                                              {maskCurrencyInText(fmtINRFull(data.value), privacyMode)}
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  />
+                                  <Area
+                                    type="monotone"
+                                    dataKey="value"
+                                    stroke={THEME.accent}
+                                    strokeWidth={2.5}
+                                    fill="url(#heroSparkGrad)"
+                                    dot={false}
+                                  />
+                                </AreaChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: THEME.muted, fontSize: 12 }}>
+                                Trajectory records update over time
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* ── Asset Class Proportional Allocation Bar ── */}
@@ -4747,17 +4710,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                       (metrics.rentalDepositLiability || 0);
 
                     return (
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                          gap: 12,
-                          position: "relative",
-                          zIndex: 1,
-                          paddingTop: 24,
-                          borderTop: `1px solid ${THEME.line}`,
-                        }}
-                      >
+                      <div className="exec-stat-matrix">
                         {/* Liquid & Fixed Income */}
                         <HeroStat
                           label="Bank Cash"
@@ -4874,17 +4827,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                   {/* 1. SAVINGS RATE */}
                   <Card
                     onClick={() => setTab("budget")}
-                    className="card-lift"
+                    className="exec-kpi-card"
                     style={{
-                      padding: 22,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
                       cursor: "pointer",
-                      borderRadius: "var(--radius-lg)",
-                      border: `1px solid ${THEME.line}`,
                       borderTop: `3.5px solid ${metrics.savingsRate >= 20 ? THEME.sage : metrics.savingsRate >= 10 ? THEME.gold : THEME.rust}`,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                     }}
                   >
                     <div
@@ -4925,7 +4871,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                       <ArrowUpRight size={14} style={{ color: THEME.muted, opacity: 0.7 }} />
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                      <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0 }}>
+                      <div style={{ position: "relative", width: 56, height: 56, flexShrink: 0 }}>
                         <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
                           <path
                             d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
@@ -4952,7 +4898,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: 900,
                             color: THEME.ink,
                           }}
@@ -4963,7 +4909,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                           style={{
-                            fontSize: 28,
+                            fontSize: 26,
                             fontWeight: 900,
                             color: metrics.savingsRate >= 20 ? THEME.sage : metrics.savingsRate >= 10 ? THEME.gold : THEME.rust,
                             lineHeight: 1,
@@ -4990,17 +4936,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                   {/* 2. DEBT-TO-ASSET */}
                   <Card
                     onClick={() => setTab("credit")}
-                    className="card-lift"
+                    className="exec-kpi-card"
                     style={{
-                      padding: 22,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
                       cursor: "pointer",
-                      borderRadius: "var(--radius-lg)",
-                      border: `1px solid ${THEME.line}`,
                       borderTop: `3.5px solid ${metrics.debtToAssetRatio < 25 ? THEME.sage : metrics.debtToAssetRatio < 40 ? THEME.gold : THEME.rust}`,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                     }}
                   >
                     <div
@@ -5052,7 +4991,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                         <div
                           style={{
                             fontFamily: "var(--font-display)",
-                            fontSize: 32,
+                            fontSize: 28,
                             fontWeight: 900,
                             color:
                               metrics.debtToAssetRatio < 25
@@ -5107,17 +5046,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                   {/* 3. LIQUIDITY SCORE */}
                   <Card
                     onClick={() => setTab("investments")}
-                    className="card-lift"
+                    className="exec-kpi-card"
                     style={{
-                      padding: 22,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
                       cursor: "pointer",
-                      borderRadius: "var(--radius-lg)",
-                      border: `1px solid ${THEME.line}`,
                       borderTop: `3.5px solid ${metrics.liquidAssets / (metrics.totalAssets || 1) >= 0.3 ? THEME.sage : metrics.liquidAssets / (metrics.totalAssets || 1) >= 0.15 ? THEME.gold : THEME.rust}`,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                     }}
                   >
                     <div
@@ -5176,7 +5108,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                               <div
                                 style={{
                                   fontFamily: "var(--font-display)",
-                                  fontSize: 32,
+                                  fontSize: 28,
                                   fontWeight: 900,
                                   color: ratioColor,
                                   lineHeight: 1,
@@ -5221,17 +5153,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                   {/* 4. INVESTMENT P&L */}
                   <Card
                     onClick={() => setTab("demat")}
-                    className="card-lift"
+                    className="exec-kpi-card"
                     style={{
-                      padding: 22,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
                       cursor: "pointer",
-                      borderRadius: "var(--radius-lg)",
-                      border: `1px solid ${THEME.line}`,
                       borderTop: `3.5px solid ${(metrics.mfValue + metrics.stockValue) >= (metrics.mfInvested + metrics.stockInvested) ? THEME.sage : THEME.rust}`,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                     }}
                   >
                     <div
@@ -5284,7 +5209,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                             <div
                               style={{
                                 fontFamily: "var(--font-display)",
-                                fontSize: 30,
+                                fontSize: 26,
                                 fontWeight: 900,
                                 color: c,
                                 lineHeight: 1,
@@ -5320,7 +5245,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                   </Card>
                 </div>
 
-            {/* Row of Health, Dues, Streak */}
+            {/* Row of Health, Dues, Streak in Tri-Deck */}
             {(() => {
               const healthScoreData = !healthSimActive
                 ? {
@@ -5410,7 +5335,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               return (
                 <Card
                   className="bento-col-4 bento-row-2"
-                  style={{ padding: 24, display: "flex", flexDirection: "column", height: "100%" }}
+                  style={{ padding: 24, display: "flex", flexDirection: "column", height: "100%", boxShadow: "0 4px 16px rgba(0,0,0,0.03)" }}
                 >
                   <div
                     style={{
@@ -5444,7 +5369,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                     </button>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20 }}>
-                    <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0 }}>
+                    <div style={{ position: "relative", width: 80, height: 80, flexShrink: 0 }}>
                       <svg
                         viewBox="0 0 36 36"
                         style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}
@@ -5486,7 +5411,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                           style={{
                             fontFamily: "var(--font-display)",
                             fontSize: 22,
-                            fontWeight: 600,
+                            fontWeight: 700,
                             lineHeight: 1,
                             color: healthScoreData.scoreColor,
                           }}
@@ -16068,19 +15993,10 @@ const HeroStat = ({
             },
           }
         : {})}
-      className="card-lift"
+      className="exec-stat-tile"
       style={{
-        background: "var(--surface-0)",
-        border: "1px solid var(--t-line)",
         borderLeft: `3.5px solid ${accentColor}`,
-        borderRadius: "var(--radius-md)",
-        padding: "12px 14px",
         cursor: isClickable ? "pointer" : "default",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        gap: 8,
-        transition: "all 0.2s var(--ease-premium)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
@@ -16088,8 +16004,8 @@ const HeroStat = ({
           {icon && (
             <div
               style={{
-                width: 20,
-                height: 20,
+                width: 22,
+                height: 22,
                 borderRadius: "var(--radius-xs)",
                 background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
                 display: "flex",
@@ -16131,6 +16047,7 @@ const HeroStat = ({
           fontVariantNumeric: "tabular-nums",
           letterSpacing: "-0.03em",
           lineHeight: 1.1,
+          marginTop: 4,
         }}
       >
         <Money value={value} variant="full" />
