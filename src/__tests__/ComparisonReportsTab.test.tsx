@@ -13,8 +13,13 @@ vi.mock("recharts", async () => {
   };
 });
 
-describe("ComparisonReportsTab Premium UI Statically", () => {
-  const currentYM = new Date().toISOString().slice(0, 7);
+describe("ComparisonReportsTab Senior Executive UI", () => {
+  const now = new Date();
+  const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const prevYM = `${now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()}-${String(
+    now.getMonth() === 0 ? 12 : now.getMonth()
+  ).padStart(2, "0")}`;
+
   const mockState = {
     transactions: [
       {
@@ -23,32 +28,75 @@ describe("ComparisonReportsTab Premium UI Statically", () => {
         note: "Doctor Consult",
         category: "Health",
         type: "debit",
-        amount: 1500,
+        amount: 3500,
       },
       {
-        id: "t2",
-        date: "2026-07-02",
+        id: "2",
+        date: `${prevYM}-10`,
         note: "Doctor Consult",
         category: "Health",
         type: "debit",
         amount: 1500,
       },
+      {
+        id: "3",
+        date: `${currentYM}-01`,
+        note: "Salary",
+        category: "Salary",
+        type: "credit",
+        amount: 100000,
+      },
+      {
+        id: "4",
+        date: `${prevYM}-01`,
+        note: "Salary",
+        category: "Salary",
+        type: "credit",
+        amount: 95000,
+      },
     ],
     income: [],
-    netWorthHistory: [],
+    netWorthHistory: [
+      { month: currentYM, netWorth: 5000000 },
+      { month: prevYM, netWorth: 4800000 },
+    ],
   };
 
-  it("should render comparison titles, stats cards, Recharts horizontal bars, and detailed table lists", () => {
+  it("should render comparison titles, quick presets, 5 KPI variance cards, smart highlights, and detailed table", () => {
     const html = renderToString(
-      <ComparisonReportsTab state={mockState} metrics={{ netWorth: 4500000 }} />
+      <ComparisonReportsTab state={mockState} metrics={{ netWorth: 5000000 }} />
     );
 
-    // Verify key titles and comparatives render correctly
+    // Header & Presets
     expect(html).toContain("Comparison Reports");
+    expect(html).toContain("MoM");
+    expect(html).toContain("QoQ");
+    expect(html).toContain("YoY");
+    expect(html).toContain("FY vs FY");
+
+    // Executive Split Cards
     expect(html).toContain("Expenses");
     expect(html).toContain("Income");
+    expect(html).toContain("Net Cash Surplus");
+    expect(html).toContain("Savings Rate");
+    expect(html).toContain("Net Worth");
+
+    // Smart Highlights
+    expect(html).toContain("Smart Comparison Highlights &amp; Drift Insights");
+
+    // Charts & Category Table
     expect(html).toContain("Category Comparison");
     expect(html).toContain("Category Detail");
     expect(html).toContain("Health");
+    expect(html).toContain("Total Aggregates");
+    expect(html).toContain("Volume Comparison");
+  });
+
+  it("should render graceful empty state when there are no transactions or income", () => {
+    const emptyState = { transactions: [], income: [], netWorthHistory: [] };
+    const html = renderToString(
+      <ComparisonReportsTab state={emptyState} metrics={{ netWorth: 0 }} />
+    );
+    expect(html).toContain("Not Enough Comparison Data");
   });
 });
