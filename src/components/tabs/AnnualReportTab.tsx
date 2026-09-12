@@ -4,6 +4,7 @@ import {
   FileText,
   Printer,
   TrendingUp,
+  TrendingDown,
   Wallet,
   PiggyBank,
   PieChart as PieIcon,
@@ -22,6 +23,15 @@ import {
   Flame,
   Info,
   Download,
+  Calendar,
+  Layers,
+  Activity,
+  Award,
+  ChevronRight,
+  Zap,
+  CreditCard,
+  Scale,
+  Percent,
 } from "lucide-react";
 import {
   AreaChart,
@@ -36,6 +46,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
 import { THEME, PIE_COLORS, ASSET_CLASS_COLORS } from "../../utils/constants";
 import { getCurrentFY } from "../../utils/appConstants";
@@ -52,7 +63,7 @@ import { isLongTerm, isEquityMF } from "./CapitalGainsTab";
 import { computeNetWorthAsOf } from "../../utils/netWorthAsOf";
 
 /* ══════════════════════════════════════════════════════════════════
-   HELPERS & PREMIUM CONTROLS
+   HELPERS & DATE UTILITIES
    ══════════════════════════════════════════════════════════════════ */
 
 const getFYDates = (fy: string) => {
@@ -138,47 +149,100 @@ const printStyles = `@media print {
   }
 }`;
 
-/* ── Tiny sub-components ───────────────────────────────────────── */
+/* ── UI Building Blocks ───────────────────────────────────────── */
 
-const CardHeading = ({ icon: Icon, title, id, color = THEME.accent }: any) => (
+const CardHeading = ({
+  icon: Icon,
+  title,
+  id,
+  color = THEME.accent,
+  badge,
+}: {
+  icon: any;
+  title: string;
+  id?: string;
+  color?: string;
+  badge?: string;
+}) => (
   <div
     id={id}
     style={{
       display: "flex",
       alignItems: "center",
+      justifyContent: "space-between",
       gap: 10,
       marginBottom: 16,
-      scrollMarginTop: 84,
+      scrollMarginTop: 90,
     }}
   >
-    <div style={{ display: "flex", alignItems: "center" }}>
-      <Icon size={19} style={{ color }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          background: `color-mix(in srgb, ${color} 14%, transparent)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color,
+          flexShrink: 0,
+        }}
+      >
+        <Icon size={18} />
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 16,
+          fontWeight: 700,
+          color: THEME.ink,
+          letterSpacing: "-0.01em",
+        }}
+      >
+        {title}
+      </div>
     </div>
-    <div
-      style={{
-        fontFamily: "var(--font-display)",
-        fontSize: 16,
-        fontWeight: 600,
-        color: THEME.ink,
-        letterSpacing: "-0.005em",
-      }}
-    >
-      {title}
-    </div>
+    {badge && (
+      <Badge variant="neutral" style={{ fontSize: 10, padding: "2px 8px" }}>
+        {badge}
+      </Badge>
+    )}
   </div>
 );
 
-const DataRow = ({ label, value, bold, color }: any) => (
+const DataRow = ({
+  label,
+  value,
+  bold,
+  color,
+  subText,
+}: {
+  label: string;
+  value: React.ReactNode;
+  bold?: boolean;
+  color?: string;
+  subText?: string;
+}) => (
   <div
     style={{
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
-      padding: "10px 0",
+      padding: "9px 0",
       borderBottom: `1px solid ${THEME.line}`,
     }}
   >
-    <span style={{ fontSize: 13, color: THEME.muted, fontWeight: bold ? 700 : 500 }}>{label}</span>
+    <div>
+      <span style={{ fontSize: 12.5, color: THEME.muted, fontWeight: bold ? 700 : 500 }}>
+        {label}
+      </span>
+      {subText && (
+        <span style={{ fontSize: 11, color: THEME.muted, opacity: 0.8, marginLeft: 6 }}>
+          ({subText})
+        </span>
+      )}
+    </div>
     <span
       className="tabular-nums"
       style={{ fontSize: 13, fontWeight: bold ? 700 : 600, color: color || THEME.ink }}
@@ -188,100 +252,198 @@ const DataRow = ({ label, value, bold, color }: any) => (
   </div>
 );
 
-const ProgressBar = ({ pct, color, height = 6 }: any) => (
-  <div className="progress-track" style={{ height }}>
+const ProgressBar = ({
+  pct,
+  color,
+  height = 6,
+}: {
+  pct: number;
+  color?: string;
+  height?: number;
+}) => (
+  <div
+    className="progress-track"
+    style={{
+      height,
+      background: "var(--surface-2)",
+      borderRadius: height / 2,
+      overflow: "hidden",
+      position: "relative",
+    }}
+  >
     <div
       className="progress-fill"
       style={{
         width: `${Math.min(100, Math.max(0, pct))}%`,
         background: color || THEME.accent,
+        height: "100%",
+        borderRadius: height / 2,
+        transition: "width 0.6s cubic-bezier(0.22, 1, 0.36, 1)",
       }}
     />
   </div>
 );
 
-const MetricTile = ({ label, value, sub, color }: any) => (
+const MetricTile = ({
+  label,
+  value,
+  sub,
+  color,
+  trend,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  color?: string;
+  trend?: { isPositive: boolean; text: string };
+}) => (
   <div
     style={{
       padding: "14px 16px",
       background: "var(--surface-0)",
       border: `1px solid ${THEME.line}`,
-      borderRadius: 10,
-      textAlign: "center",
+      borderRadius: 12,
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      position: "relative",
+      overflow: "hidden",
     }}
   >
     <div
       style={{
-        fontSize: 10,
+        fontSize: 10.5,
         color: THEME.muted,
         fontWeight: 700,
         textTransform: "uppercase",
         letterSpacing: "0.08em",
         marginBottom: 6,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
       }}
     >
-      {label}
+      <span>{label}</span>
+      {trend && (
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: trend.isPositive ? THEME.sage : THEME.rust,
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          {trend.isPositive ? "+" : ""}
+          {trend.text}
+        </span>
+      )}
     </div>
     <div
       style={{
-        fontSize: 20,
+        fontFamily: "var(--font-display)",
+        fontSize: 19,
         fontWeight: 800,
         color: color || THEME.ink,
-        letterSpacing: "-0.03em",
+        letterSpacing: "-0.02em",
         fontVariantNumeric: "tabular-nums",
       }}
     >
       <Prv>{value}</Prv>
     </div>
-    {sub && <div style={{ fontSize: 10, color: THEME.muted, marginTop: 4 }}>{sub}</div>}
+    {sub && (
+      <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4, fontWeight: 500 }}>
+        {sub}
+      </div>
+    )}
   </div>
 );
 
-const InfoBanner = ({ children }: any) => (
-  <div className="info-box info-box-info" style={{ marginBottom: 12, fontSize: 11 }}>
-    <Info size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-    {children}
+const InfoBanner = ({ children }: { children: React.ReactNode }) => (
+  <div
+    className="info-box info-box-info"
+    style={{
+      marginBottom: 14,
+      fontSize: 11.5,
+      padding: "10px 14px",
+      borderRadius: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    }}
+  >
+    <Info size={14} style={{ flexShrink: 0 }} />
+    <span>{children}</span>
   </div>
 );
 
-/* ── Premium SVG Circular Progress ────────────────────────────── */
+/* ── SVG Circular Progress Gauge ──────────────────────────────── */
 const CircularProgress = ({
   pct,
   color,
-  size = 50,
+  size = 52,
+  strokeWidth = 5,
+  children,
 }: {
   pct: number;
   color: string;
   size?: number;
+  strokeWidth?: number;
+  children?: React.ReactNode;
 }) => {
-  const strokeWidth = 5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (Math.min(100, Math.max(0, pct)) / 100) * circumference;
+  const strokeDashoffset =
+    circumference - (Math.min(100, Math.max(0, pct)) / 100) * circumference;
 
   return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="transparent"
-        stroke="var(--surface-2)"
-        strokeWidth={strokeWidth}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="transparent"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={strokeDashoffset}
-        strokeLinecap="round"
-        style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.22, 1, 0.36, 1)" }}
-      />
-    </svg>
+    <div
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="transparent"
+          stroke="var(--surface-2)"
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="transparent"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.22, 1, 0.36, 1)" }}
+        />
+      </svg>
+      {children && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -291,24 +453,24 @@ const GlassTooltip = ({ active, payload, label }: any) => {
     return (
       <div
         style={{
-          background: "color-mix(in srgb, var(--surface-0) 85%, transparent)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
+          background: "color-mix(in srgb, var(--surface-0) 90%, transparent)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
           border: `1.5px solid ${THEME.line}`,
           borderRadius: 12,
           padding: "10px 14px",
-          boxShadow:
-            "0 8px 30px rgba(0, 0, 0, 0.12), inset 0 1px 0 color-mix(in srgb, var(--t-ink) 6%, transparent)",
+          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.15)",
           color: THEME.ink,
+          minWidth: 140,
         }}
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 10.5,
             fontWeight: 700,
             color: THEME.muted,
             textTransform: "uppercase",
-            letterSpacing: "0.05em",
+            letterSpacing: "0.06em",
             marginBottom: 6,
           }}
         >
@@ -317,18 +479,28 @@ const GlassTooltip = ({ active, payload, label }: any) => {
         {payload.map((item: any, idx: number) => (
           <div
             key={idx}
-            style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              fontSize: 12,
+              fontWeight: 600,
+              padding: "2px 0",
+            }}
           >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: item.color || item.fill,
-              }}
-            />
-            <span style={{ color: THEME.muted }}>{item.name}:</span>
-            <span style={{ color: THEME.ink }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: item.color || item.fill,
+                }}
+              />
+              <span style={{ color: THEME.muted }}>{item.name}:</span>
+            </div>
+            <span style={{ color: THEME.ink, fontWeight: 700 }}>
               <Money value={item.value} variant="full" />
             </span>
           </div>
@@ -338,12 +510,24 @@ const GlassTooltip = ({ active, payload, label }: any) => {
   }
   return null;
 };
+
 /* ══════════════════════════════════════════════════════════════════
-   MAIN COMPONENT
+   MAIN ANNUAL REPORT COMPONENT
    ══════════════════════════════════════════════════════════════════ */
 
-export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "all" }: any) => {
+export const AnnualReportTab = ({
+  state,
+  metrics,
+  marketData,
+  activeProfile = "all",
+}: {
+  state: any;
+  metrics: any;
+  marketData?: any;
+  activeProfile?: string;
+}) => {
   const { privacyMode } = usePrivacy();
+
   // ── Inject print styles ────────────────────────────────────────
   useEffect(() => {
     const style = document.createElement("style");
@@ -355,7 +539,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     };
   }, []);
 
-  // ── FY selection ───────────────────────────────────────────────
+  // ── FY Discovery & Selection ──────────────────────────────────
   const availableFYs = useMemo(() => {
     const fySet = new Set<number>();
     const addDate = (d: string) => {
@@ -387,7 +571,9 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     (state.mutualFunds || []).forEach((m: any) => addDate(m.buyDate));
     (state.fixedDeposits || []).forEach((fd: any) => addDate(fd.startDate));
     (state.ppfLedger || []).forEach((t: any) => addDate(t.date));
-    (state.ppf || []).forEach((p: any) => (p.transactions || []).forEach((t: any) => addDate(t.date)));
+    (state.ppf || []).forEach((p: any) =>
+      (p.transactions || []).forEach((t: any) => addDate(t.date))
+    );
     (state.stockSells || []).forEach((s: any) => addDate(s.sellDate || s.buyDate));
     (state.mfSells || []).forEach((m: any) => addDate(m.sellDate || m.buyDate));
     (state.taxPayments || []).forEach((p: any) => addDate(p.date));
@@ -441,11 +627,13 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
   const prevFY = `${fyStartYear - 1}-${String(fyStartYear).slice(-2)}`;
   const { start: prevFyStart, end: prevFyEnd } = getFYDates(prevFY);
 
-  // States for dynamic donut hover effects
+  // States for dynamic chart interactions
   const [hoveredExpense, setHoveredExpense] = useState<{ name: string; value: number } | null>(
     null
   );
   const [hoveredAsset, setHoveredAsset] = useState<{ name: string; value: number } | null>(null);
+  const [nwChartMode, setNwChartMode] = useState<"curve" | "delta">("curve");
+  const [showAllExpenses, setShowAllExpenses] = useState(false);
 
   // ── Scrollspy active navigation tracking ───────────────────────
   const [activeSection, setActiveSection] = useState("nw");
@@ -474,16 +662,16 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       (d: any) => d.date && d.date >= fyStart && d.date <= fyEnd
     );
     const hasInvestmentActivity =
-      (state.stocks || []).some((s: any) => s.buyDate && s.buyDate >= fyStart && s.buyDate <= fyEnd) ||
+      (state.stocks || []).some(
+        (s: any) => s.buyDate && s.buyDate >= fyStart && s.buyDate <= fyEnd
+      ) ||
       (state.mutualFunds || []).some(
         (m: any) => m.buyDate && m.buyDate >= fyStart && m.buyDate <= fyEnd
       ) ||
       (state.fixedDeposits || []).some(
         (fd: any) => fd.startDate && fd.startDate >= fyStart && fd.startDate <= fyEnd
       ) ||
-      (state.ppfLedger || []).some(
-        (t: any) => t.date && t.date >= fyStart && t.date <= fyEnd
-      ) ||
+      (state.ppfLedger || []).some((t: any) => t.date && t.date >= fyStart && t.date <= fyEnd) ||
       (state.ppf || []).some((p: any) =>
         (p.transactions || []).some((t: any) => t.date && t.date >= fyStart && t.date <= fyEnd)
       ) ||
@@ -493,9 +681,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       (state.mfSells || []).some(
         (m: any) => m.sellDate && m.sellDate >= fyStart && m.sellDate <= fyEnd
       ) ||
-      (state.taxPayments || []).some(
-        (p: any) => p.date && p.date >= fyStart && p.date <= fyEnd
-      );
+      (state.taxPayments || []).some((p: any) => p.date && p.date >= fyStart && p.date <= fyEnd);
     const hasAssets =
       (state.bankAccounts || []).length > 0 ||
       (state.realEstateProperties || []).length > 0 ||
@@ -593,12 +779,12 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
   }, [hasAnyData, selectedFY]);
 
   /* ═══════════════════════════════════════════════════════════════
-     (a) NET WORTH SUMMARY
+     (a) NET WORTH SUMMARY (Source Reconstructed & Boundary Safe)
      ═══════════════════════════════════════════════════════════════ */
   const nwForMonth = useCallback(
     (ym: string): number => {
       const todayYM = today().slice(0, 7);
-      if (ym > todayYM) return 0; // can't reconstruct a month that hasn't happened yet
+      if (ym > todayYM) return 0; // future months
       if (ym === todayYM && metrics.netWorth > 0) return metrics.netWorth;
 
       const reconstructed = computeNetWorthAsOf(state, ym, marketData, activeProfile);
@@ -610,7 +796,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
         return reconstructed.netWorth;
       }
 
-      // Fallback only if there are no asset/liability records at all (e.g. test fixture with only netWorthHistory)
+      // Fallback only if there are no asset/liability records at all
       if (activeProfile === "all") {
         const entry = (state.netWorthHistory || [])
           .filter((h: any) => h.month)
@@ -625,7 +811,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
   const netWorthData = useMemo(() => {
     const aprilKey = `${fyStartYear}-04`;
     const marchKey = `${fyStartYear + 1}-03`;
-    const openingMarchKey = `${fyStartYear}-03`; // last month of PREVIOUS FY = opening balance
+    const openingMarchKey = `${fyStartYear}-03`; // previous FY March snapshot = opening balance
     const todayYM = today().slice(0, 7);
     const isCurrentFY = todayYM >= aprilKey && todayYM <= marchKey;
 
@@ -637,23 +823,28 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     const changePct =
       openingNW !== 0 ? (change / Math.abs(openingNW)) * 100 : closingNW > 0 ? 100 : 0;
 
+    let prevVal = openingNW;
     const chartData = fyMonths
       .map((ym, idx) => {
-        // For future months in ongoing FY that haven't occurred, skip them
         if (isCurrentFY && ym > todayYM) return null;
-        let nw = ym === todayYM && metrics.netWorth > 0 ? metrics.netWorth : nwForMonth(ym);
-        return { month: MONTH_NAMES[idx], value: nw };
+        const nw = ym === todayYM && metrics.netWorth > 0 ? metrics.netWorth : nwForMonth(ym);
+        const delta = nw - prevVal;
+        prevVal = nw;
+        return {
+          month: MONTH_NAMES[idx],
+          ym,
+          value: nw,
+          delta,
+        };
       })
-      .filter((d): d is { month: string; value: number } => d !== null);
+      .filter((d): d is { month: string; ym: string; value: number; delta: number } => d !== null);
 
-    return { openingNW, closingNW, change, changePct, chartData, isCurrentFY };
-  }, [
-    nwForMonth,
-    metrics.netWorth,
-    selectedFY,
-    fyMonths,
-    fyStartYear,
-  ]);
+    const values = chartData.map((d) => d.value);
+    const peakNW = values.length > 0 ? Math.max(...values) : closingNW;
+    const lowestNW = values.length > 0 ? Math.min(...values) : openingNW;
+
+    return { openingNW, closingNW, change, changePct, chartData, isCurrentFY, peakNW, lowestNW };
+  }, [nwForMonth, metrics.netWorth, selectedFY, fyMonths, fyStartYear]);
 
   /* ═══════════════════════════════════════════════════════════════
      (b) INCOME SUMMARY
@@ -662,13 +853,11 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     const isTransfer = (cat: string) =>
       cat === "Transfer" || cat === "Self Transfer" || cat === "Self-Transfer";
 
-    // Income from explicit income ledger (Banks / Income tab)
     const incomeLedger = (state.income || []).filter(
       (i: any) => i.date && i.date >= fyStart && i.date <= fyEnd
     );
     const ledgerTotal = incomeLedger.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
 
-    // Bank credit transactions (excluding internal transfers)
     const creditTxns = (state.transactions || []).filter(
       (t: any) =>
         t.date &&
@@ -696,13 +885,10 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       }
     });
 
-    // Landlord rental receipts in FY
     const rentalReceiptsInFY = (state.rentalProperties || []).flatMap((p: any) =>
       (p.receipts || []).filter((r: any) => r.date && r.date >= fyStart && r.date <= fyEnd)
     );
 
-    // If source entries already explicitly categorize rental income (e.g. "Rent" or "Rental Income"),
-    // avoid double counting
     const alreadyHasRent = Object.keys(catMap).some((k) => {
       const lower = k.toLowerCase();
       return lower.includes("rental") || lower === "rent";
@@ -736,7 +922,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       income: monthlyMap[ym] || 0,
     }));
 
-    return { totalIncome, breakdown, monthlyChart };
+    return { totalIncome, breakdown, monthlyChart, streamCount: breakdown.length };
   }, [
     state.income,
     state.transactions,
@@ -764,7 +950,6 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     );
     const txnExpense = debitTxns.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
 
-    // Exclude bank-linked payments (id `bank-${txnId}`) already inside debitTxns
     const rentPaid = (state.rentedProperties || []).reduce(
       (sum: number, p: any) =>
         sum +
@@ -819,6 +1004,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
 
     const divisor = fyMonthsElapsed || 1;
     const avgMonthly = totalExpense / divisor;
+    const dailyBurn = totalExpense / (divisor * 30);
 
     const highestExpense =
       debitTxns.length > 0
@@ -828,7 +1014,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
           )
         : null;
 
-    return { totalExpense, breakdown, top5, avgMonthly, highestExpense, monthlyMap };
+    return { totalExpense, breakdown, top5, avgMonthly, dailyBurn, highestExpense, monthlyMap };
   }, [state.transactions, state.rentedProperties, selectedFY, fyStart, fyEnd, fyMonthsElapsed]);
 
   /* ═══════════════════════════════════════════════════════════════
@@ -887,7 +1073,6 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       else stcg += gain;
     });
 
-    // Build MF category index to resolve category if stripped on historical sale records
     const mfCatIdx = new Map<string, string>();
     (state.mutualFunds || []).forEach((mf: any) => {
       if (mf.category) {
@@ -950,7 +1135,6 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     fyEnd,
   ]);
 
-  // Compute monthly savings trend for sparkline
   const monthlySavingsTrend = useMemo(() => {
     return fyMonths.map((ym) => {
       const inc =
@@ -984,7 +1168,10 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
         t.type === "credit" &&
         !isTransfer(t.category)
     );
-    const prevCreditTotal = prevCreditTxns.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+    const prevCreditTotal = prevCreditTxns.reduce(
+      (s: number, t: any) => s + Number(t.amount || 0),
+      0
+    );
 
     const prevRentalReceipts = (state.rentalProperties || []).flatMap((p: any) =>
       (p.receipts || []).filter((r: any) => r.date && r.date >= prevFyStart && r.date <= prevFyEnd)
@@ -1069,7 +1256,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
   ]);
 
   /* ═══════════════════════════════════════════════════════════════
-     (e) ASSET ALLOCATION (Exhaustive & Mathematically Balanced)
+     (e) ASSET ALLOCATION
      ═══════════════════════════════════════════════════════════════ */
   const assetAllocation = useMemo(() => {
     let equityMF = 0;
@@ -1134,12 +1321,19 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     ].filter((a) => a.value > 0);
 
     const total = alloc.reduce((s, a) => s + a.value, 0);
+    const equityPct = total > 0 ? (equity / total) * 100 : 0;
 
-    return { alloc, total };
+    let riskProfile = "Balanced";
+    if (equityPct >= 70) riskProfile = "Aggressive Growth";
+    else if (equityPct >= 50) riskProfile = "Growth Oriented";
+    else if (equityPct >= 30) riskProfile = "Balanced";
+    else riskProfile = "Conservative";
+
+    return { alloc, total, riskProfile, equityPct };
   }, [metrics, state.mutualFunds]);
 
   /* ═══════════════════════════════════════════════════════════════
-     (f) DEBT SUMMARY (Active Loans vs Closed Loan Obligations)
+     (f) DEBT SUMMARY
      ═══════════════════════════════════════════════════════════════ */
   const debtData = useMemo(() => {
     const loans = state.loansTaken || [];
@@ -1152,7 +1346,10 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
 
     const totalOutstanding = activeLoans.reduce((s: number, l: any) => s + loanOutstanding(l), 0);
     const totalPrincipal = loans.reduce((s: number, l: any) => s + Number(l.principal || 0), 0);
-    const totalEMI = activeLoans.reduce((s: number, l: any) => s + Number(l.emi || l.monthlyPayment || 0), 0);
+    const totalEMI = activeLoans.reduce(
+      (s: number, l: any) => s + Number(l.emi || l.monthlyPayment || 0),
+      0
+    );
     const annualEMI = totalEMI * 12;
 
     const interestPortion = activeLoans.reduce(
@@ -1167,6 +1364,9 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       0
     );
 
+    const dtiRatio =
+      incomeData.totalIncome > 0 ? (annualEMI / incomeData.totalIncome) * 100 : 0;
+
     return {
       totalLoanCount: loans.length,
       activeLoanCount: activeLoans.length,
@@ -1178,11 +1378,12 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       principalRepaid,
       interestPortion,
       ccOutstanding,
+      dtiRatio,
     };
-  }, [state.loansTaken, state.creditCards]);
+  }, [state.loansTaken, state.creditCards, incomeData.totalIncome]);
 
   /* ═══════════════════════════════════════════════════════════════
-     (g) INSURANCE COVERAGE (Active Life & Health Policies)
+     (g) INSURANCE COVERAGE
      ═══════════════════════════════════════════════════════════════ */
   const insuranceData = useMemo(() => {
     const isPolicyActive = (p: any) => {
@@ -1207,15 +1408,18 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     }, 0);
 
     const termPremiums = termPlans.reduce(
-      (s: number, p: any) => s + annualizePremium(p.premium, p.premiumFrequency, p.annualPremium),
+      (s: number, p: any) =>
+        s + annualizePremium(p.premium, p.premiumFrequency, p.annualPremium),
       0
     );
     const investPremiums = investPlans.reduce(
-      (s: number, p: any) => s + annualizePremium(p.premium, p.premiumFrequency, p.annualPremium),
+      (s: number, p: any) =>
+        s + annualizePremium(p.premium, p.premiumFrequency, p.annualPremium),
       0
     );
     const healthPremiums = healthPolicies.reduce(
-      (s: number, p: any) => s + annualizePremium(p.premium, p.premiumFrequency, p.annualPremium),
+      (s: number, p: any) =>
+        s + annualizePremium(p.premium, p.premiumFrequency, p.annualPremium),
       0
     );
     const totalPremiums = licPremiums + termPremiums + investPremiums + healthPremiums;
@@ -1243,7 +1447,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
   ]);
 
   /* ═══════════════════════════════════════════════════════════════
-     (h) TAX SUMMARY (Direct Payments & Normalized Salary TDS)
+     (h) TAX SUMMARY
      ═══════════════════════════════════════════════════════════════ */
   const taxData = useMemo(() => {
     const payments = (state.taxPayments || []).filter(
@@ -1322,23 +1526,32 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     const sumSaved =
       metrics.totalGoalSaved > 0
         ? metrics.totalGoalSaved
-        : goals.reduce((s: number, g: any) => s + Number(g.savedAmount || g.currentAmount || g.saved || 0), 0);
+        : goals.reduce(
+            (s: number, g: any) => s + Number(g.savedAmount || g.currentAmount || g.saved || 0),
+            0
+          );
 
     const overallPct = sumTarget > 0 ? Math.min((sumSaved / sumTarget) * 100, 100) : 0;
 
-    return { totalGoals, completed, topGoals, overallPct };
+    return { totalGoals, completed, topGoals, overallPct, sumTarget, sumSaved };
   }, [state.goals, metrics.totalGoalTarget, metrics.totalGoalSaved]);
 
   /* ═══════════════════════════════════════════════════════════════
-     (j) KEY HIGHLIGHTS
+     (j) KEY HIGHLIGHTS & FINANCIAL ACHIEVEMENTS
      ═══════════════════════════════════════════════════════════════ */
   const highlights = useMemo(() => {
-    const items: { icon: any; text: React.ReactNode; color: string }[] = [];
+    const items: {
+      icon: any;
+      category: "Milestone" | "Win" | "Prudence" | "Insight";
+      text: React.ReactNode;
+      color: string;
+    }[] = [];
 
     if (expenseData.highestExpense) {
       const e = expenseData.highestExpense;
       items.push({
         icon: Receipt,
+        category: "Insight",
         text: (
           <>
             Highest single expense: <Money value={e.amount} variant="full" /> —{" "}
@@ -1382,6 +1595,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       );
       items.push({
         icon: TrendingUp,
+        category: "Win",
         text: (
           <>
             Largest investment: <Money value={largest.amount} variant="full" /> in {largest.name}
@@ -1407,7 +1621,9 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       .filter((m: any) => Number(m.units || 0) > 0)
       .map((m: any) => {
         const invested = Number(m.invested || m.investedValue || 0);
-        const current = Number(m.currentValue || (m.currentNav || m.buyNav || 0) * (m.units || 0) || 0);
+        const current = Number(
+          m.currentValue || (m.currentNav || m.buyNav || 0) * (m.units || 0) || 0
+        );
         const gain = current - invested;
         const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
         return { name: m.name || m.scheme || "MF", gain, gainPct, invested };
@@ -1417,12 +1633,15 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       const best = allPnL.reduce((max, p) => (p.gainPct > max.gainPct ? p : max), allPnL[0]);
       items.push({
         icon: Trophy,
+        category: "Win",
         text: `Best performer: ${best.name} (+${best.gainPct.toFixed(1)}%)`,
         color: THEME.sage,
       });
     }
 
-    const milestones = [100000000, 50000000, 25000000, 10000000, 5000000, 2500000, 1000000, 500000, 100000];
+    const milestones = [
+      100000000, 50000000, 25000000, 10000000, 5000000, 2500000, 1000000, 500000, 100000,
+    ];
     const closingNW = Number(netWorthData.closingNW || 0);
     const openingNW = Number(netWorthData.openingNW || 0);
     if (closingNW > 0) {
@@ -1431,6 +1650,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
           const label = m >= 10000000 ? `${m / 10000000}Cr` : `${m / 100000}L`;
           items.push({
             icon: Target,
+            category: "Milestone",
             text: `Net worth crossed the ₹${label} milestone this FY`,
             color: THEME.accent,
           });
@@ -1439,11 +1659,10 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
       }
     }
 
-
-
     if (goalsData.completed > 0) {
       items.push({
         icon: CheckCircle2,
+        category: "Milestone",
         text: `${goalsData.completed} goal${goalsData.completed > 1 ? "s" : ""} completed this FY`,
         color: THEME.sage,
       });
@@ -1457,6 +1676,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     if (closedLoans.length > 0) {
       items.push({
         icon: Unlock,
+        category: "Milestone",
         text: `${closedLoans.length} loan${closedLoans.length > 1 ? "s" : ""} fully repaid`,
         color: THEME.sage,
       });
@@ -1465,6 +1685,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     if (savingsData.savingsRate >= 30) {
       items.push({
         icon: Flame,
+        category: "Prudence",
         text: `Excellent savings rate of ${savingsData.savingsRate.toFixed(0)}% achieved`,
         color: THEME.sage,
       });
@@ -1487,18 +1708,67 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
   ]);
 
   /* ═══════════════════════════════════════════════════════════════
-     RENDER
+     (k) COMPOSITE 360° FINANCIAL HEALTH SCORE
      ═══════════════════════════════════════════════════════════════ */
+  const healthScore = useMemo(() => {
+    // 1. Savings score (0-25)
+    let sScore = 0;
+    if (savingsData.savingsRate >= 35) sScore = 25;
+    else if (savingsData.savingsRate >= 20) sScore = 20;
+    else if (savingsData.savingsRate >= 10) sScore = 15;
+    else if (savingsData.savingsRate > 0) sScore = 8;
 
-  const nwChangeColor = netWorthData.change >= 0 ? THEME.sage : THEME.rust;
-  const savingsRateColor =
-    savingsData.savingsRate >= 20
-      ? THEME.sage
-      : savingsData.savingsRate >= 10
-        ? THEME.gold
-        : THEME.rust;
-  const nwTrendData = netWorthData.chartData.map((d) => d.value);
+    // 2. Debt-to-income score (0-25)
+    let dScore = 25;
+    if (debtData.dtiRatio > 50) dScore = 5;
+    else if (debtData.dtiRatio > 35) dScore = 12;
+    else if (debtData.dtiRatio > 20) dScore = 20;
 
+    // 3. Insurance cover score (0-25)
+    let iScore = 0;
+    if (insuranceData.adequacyRatio >= 10) iScore = 25;
+    else if (insuranceData.adequacyRatio >= 5) iScore = 18;
+    else if (insuranceData.adequacyRatio >= 2) iScore = 10;
+    else if (insuranceData.totalLifeCover > 0) iScore = 5;
+
+    // 4. Goal momentum score (0-25)
+    let gScore = 20;
+    if (goalsData.totalGoals > 0) {
+      if (goalsData.overallPct >= 80) gScore = 25;
+      else if (goalsData.overallPct >= 50) gScore = 20;
+      else if (goalsData.overallPct >= 25) gScore = 12;
+      else gScore = 8;
+    }
+
+    const total = Math.min(100, Math.max(0, sScore + dScore + iScore + gScore));
+    let tier = "Exceptional";
+    let tierColor = THEME.sage;
+    let persona = "Wealth Compounder";
+
+    if (total >= 85) {
+      tier = "AAA · Exceptional";
+      tierColor = THEME.sage;
+      persona = "Financial Master";
+    } else if (total >= 70) {
+      tier = "AA · Strong";
+      tierColor = THEME.accent;
+      persona = "Active Wealth Builder";
+    } else if (total >= 50) {
+      tier = "A · Moderate";
+      tierColor = THEME.gold;
+      persona = "Steady Accumulator";
+    } else {
+      tier = "B · Caution";
+      tierColor = THEME.rust;
+      persona = "Needs Optimization";
+    }
+
+    return { total, tier, tierColor, persona, sScore, dScore, iScore, gScore };
+  }, [savingsData.savingsRate, debtData.dtiRatio, insuranceData.adequacyRatio, goalsData]);
+
+  /* ═══════════════════════════════════════════════════════════════
+     EXPORT CSV HANDLER
+     ═══════════════════════════════════════════════════════════════ */
   const handleExportCSV = () => {
     const q = (v: any) => {
       const val = typeof v === "number" ? Math.round(v) : v;
@@ -1586,39 +1856,76 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
     URL.revokeObjectURL(url);
   };
 
+  const nwChangeColor = netWorthData.change >= 0 ? THEME.sage : THEME.rust;
+  const savingsRateColor =
+    savingsData.savingsRate >= 20
+      ? THEME.sage
+      : savingsData.savingsRate >= 10
+        ? THEME.gold
+        : THEME.rust;
+  const nwTrendData = netWorthData.chartData.map((d) => d.value);
+
   return (
     <div className="annual-report">
-      {/* Shown only in the printed/saved-as-PDF output — the on-screen app
-          chrome (sidebar/header) is hidden during print, so without this the
-          document would carry no branding at all. */}
+      {/* Print-only branding header */}
       <div className="print-only-header" style={{ display: "none" }}>
-        <img src="/logo-horizontal.png" alt="ArthaDrishti" style={{ height: 48, width: "auto" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <img
+            src="/logo-horizontal.png"
+            alt="ArthaDrishti"
+            style={{ height: 44, width: "auto" }}
+          />
+          <div style={{ textAlign: "right", fontSize: 11, color: "#64748b" }}>
+            <div>{fyLabel} Annual Financial Review</div>
+            <div>{formatDateReadable(fyStart)} — {formatDateReadable(fyEnd)}</div>
+          </div>
+        </div>
       </div>
 
-      {/* Header */}
+      {/* Header & Executive Controls */}
       <SectionTitle
         sub="Comprehensive financial year summary — print or save as PDF"
         rightElement={
-          <div className="no-print" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <select
-              className="form-input"
-              value={selectedFY}
-              onChange={(e) => setSelectedFY(e.target.value)}
-              aria-label="Select financial year"
-              style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, minWidth: 130 }}
-            >
-              {availableFYs.map((fy) => (
-                <option key={fy} value={fy}>
-                  {getFYLabel(fy)}
-                </option>
-              ))}
-            </select>
+          <div className="no-print" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <select
+                className="form-input"
+                value={selectedFY}
+                onChange={(e) => setSelectedFY(e.target.value)}
+                aria-label="Select financial year"
+                style={{
+                  padding: "8px 12px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  minWidth: 130,
+                  borderRadius: 10,
+                  background: "var(--surface-0)",
+                  border: `1px solid ${THEME.line}`,
+                }}
+              >
+                {availableFYs.map((fy) => (
+                  <option key={fy} value={fy}>
+                    {getFYLabel(fy)}
+                  </option>
+                ))}
+              </select>
+            </div>
             {hasAnyData && (
-              <Button variant="ghost" icon={<Download size={16} />} onClick={handleExportCSV}>
+              <Button
+                variant="ghost"
+                icon={<Download size={15} />}
+                onClick={handleExportCSV}
+                style={{ borderRadius: 10, padding: "8px 14px", fontSize: 13 }}
+              >
                 CSV
               </Button>
             )}
-            <Button variant="accent" icon={<Printer size={16} />} onClick={() => window.print()}>
+            <Button
+              variant="accent"
+              icon={<Printer size={15} />}
+              onClick={() => window.print()}
+              style={{ borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700 }}
+            >
               Print / PDF
             </Button>
           </div>
@@ -1636,19 +1943,20 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
         />
       ) : (
         <>
-          {/* ─── Premium Executive Hero Card ─────────────────────────── */}
+          {/* ─── Executive Financial Summary Hero Card ────────────────── */}
           <Card
             variant="base"
             style={{
-              padding: "clamp(24px, 4vw, 36px)",
-              marginBottom: 24,
+              padding: "clamp(24px, 3.5vw, 36px)",
+              marginBottom: 20,
               position: "relative",
               overflow: "hidden",
               background:
-                "linear-gradient(135deg, color-mix(in srgb, var(--surface-0) 95%, var(--t-accent) 5%), var(--surface-0))",
+                "linear-gradient(135deg, color-mix(in srgb, var(--surface-0) 96%, var(--t-accent) 4%), var(--surface-0))",
               border: `1px solid ${THEME.line}`,
               borderTop: `4px solid ${THEME.accent}`,
               borderRadius: "var(--radius-xl)",
+              boxShadow: "0 12px 36px -10px rgba(0, 0, 0, 0.08)",
             }}
           >
             <div
@@ -1656,8 +1964,8 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                 position: "absolute",
                 inset: 0,
                 backgroundImage: "radial-gradient(var(--t-line) 1px, transparent 1px)",
-                backgroundSize: "20px 20px",
-                opacity: 0.2,
+                backgroundSize: "24px 24px",
+                opacity: 0.25,
                 pointerEvents: "none",
               }}
             />
@@ -1675,7 +1983,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
               }}
             >
               <div style={{ textAlign: "left" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
                   <span
                     style={{
                       fontSize: 11,
@@ -1687,16 +1995,23 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                   >
                     Executive Financial Summary
                   </span>
-                  {netWorthData.isCurrentFY && (
-                    <Badge variant="gold" style={{ fontSize: 9, padding: "2px 8px" }}>
-                      Ongoing
+                  {netWorthData.isCurrentFY ? (
+                    <Badge variant="gold" style={{ fontSize: 9.5, padding: "2px 8px" }}>
+                      Ongoing FY
+                    </Badge>
+                  ) : (
+                    <Badge variant="neutral" style={{ fontSize: 9.5, padding: "2px 8px" }}>
+                      Closed FY
                     </Badge>
                   )}
+                  <Badge variant="accent" style={{ fontSize: 9.5, padding: "2px 8px" }}>
+                    {healthScore.persona}
+                  </Badge>
                 </div>
                 <div
                   style={{
                     fontFamily: "var(--font-display)",
-                    fontSize: "clamp(36px, 5vw, 56px)",
+                    fontSize: "clamp(34px, 4.5vw, 54px)",
                     fontWeight: 900,
                     letterSpacing: "-0.04em",
                     lineHeight: 1.05,
@@ -1706,26 +2021,28 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                 >
                   {fyLabel}
                 </div>
-                <div style={{ fontSize: 13, marginTop: 6, color: THEME.muted, fontWeight: 600 }}>
+                <div style={{ fontSize: 13, marginTop: 6, color: THEME.muted, fontWeight: 500 }}>
                   {formatDateReadable(fyStart)} &mdash; {formatDateReadable(fyEnd)}
                 </div>
               </div>
 
+              {/* Summary Badges Dock */}
               <div
                 style={{
                   display: "flex",
-                  gap: 20,
+                  gap: 18,
                   flexWrap: "wrap",
                   background: "var(--surface-1)",
-                  padding: "16px 24px",
+                  padding: "16px 22px",
                   borderRadius: "var(--radius-lg)",
                   border: `1px solid ${THEME.line}`,
+                  alignItems: "center",
                 }}
               >
-                <div style={{ textAlign: "center" }}>
+                <div style={{ textAlign: "center", minWidth: 105 }}>
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 10.5,
                       color: THEME.muted,
                       textTransform: "uppercase",
                       letterSpacing: "0.08em",
@@ -1740,10 +2057,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       fontFamily: "var(--font-display)",
                       fontSize: 22,
                       fontWeight: 900,
-                      color:
-                        netWorthData.change >= 0
-                          ? THEME.sage
-                          : THEME.rust,
+                      color: netWorthData.change >= 0 ? THEME.sage : THEME.rust,
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
@@ -1751,11 +2065,13 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     {netWorthData.changePct.toFixed(1)}%
                   </div>
                 </div>
-                <div style={{ width: 1, background: THEME.line }} />
-                <div style={{ textAlign: "center" }}>
+
+                <div style={{ width: 1, height: 36, background: THEME.line }} />
+
+                <div style={{ textAlign: "center", minWidth: 105 }}>
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 10.5,
                       color: THEME.muted,
                       textTransform: "uppercase",
                       letterSpacing: "0.08em",
@@ -1770,28 +2086,57 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       fontFamily: "var(--font-display)",
                       fontSize: 22,
                       fontWeight: 900,
-                      color:
-                        savingsData.savingsRate >= 20
-                          ? THEME.sage
-                          : THEME.gold,
+                      color: savingsData.savingsRate >= 20 ? THEME.sage : THEME.gold,
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
                     {savingsData.savingsRate.toFixed(0)}%
                   </div>
                 </div>
+
+                <div style={{ width: 1, height: 36, background: THEME.line }} />
+
+                <div style={{ textAlign: "center", minWidth: 105 }}>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      color: THEME.muted,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                      marginBottom: 4,
+                    }}
+                  >
+                    Health Index
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 22,
+                      fontWeight: 900,
+                      color: healthScore.tierColor,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {healthScore.total}/100
+                  </div>
+                </div>
               </div>
             </div>
           </Card>
 
-          {/* ─── Year-over-Year Comparison ───────────────────────────── */}
+          {/* ─── Year-over-Year Comparative Bento ─────────────────────── */}
           {yoyData.hasPrevData && (
-            <Card style={{ padding: 24, marginBottom: 24 }}>
-              <CardHeading icon={TrendingUp} title={`vs ${getFYLabel(prevFY)}`} />
+            <Card style={{ padding: 22, marginBottom: 20 }}>
+              <CardHeading
+                icon={TrendingUp}
+                title={`vs ${getFYLabel(prevFY)} YoY Performance`}
+                badge="Comparative Analysis"
+              />
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
                   gap: 14,
                 }}
               >
@@ -1802,7 +2147,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     prev: yoyData.prevIncome,
                     deltaPct: yoyData.incomeDeltaPct,
                     higherIsBetter: true,
-                    icon: <TrendingUp />,
+                    icon: <TrendingUp size={18} />,
                   },
                   {
                     label: "Expenses",
@@ -1810,7 +2155,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     prev: yoyData.prevExpense,
                     deltaPct: yoyData.expenseDeltaPct,
                     higherIsBetter: false,
-                    icon: <Receipt />,
+                    icon: <Receipt size={18} />,
                   },
                   {
                     label: "Net Savings",
@@ -1818,7 +2163,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     prev: yoyData.prevSavings,
                     deltaPct: yoyData.savingsDeltaPct,
                     higherIsBetter: true,
-                    icon: <PiggyBank />,
+                    icon: <PiggyBank size={18} />,
                   },
                   {
                     label: "Net Worth Growth",
@@ -1826,75 +2171,113 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     prev: yoyData.prevNWChange,
                     deltaPct: yoyData.nwChangeDeltaPct,
                     higherIsBetter: true,
-                    icon: <Wallet />,
+                    icon: <Wallet size={18} />,
                   },
                 ].map((m) => {
                   const improved = m.higherIsBetter ? m.deltaPct >= 0 : m.deltaPct <= 0;
-                  const deltaColor = m.deltaPct === 0 ? THEME.muted : improved ? THEME.sage : THEME.rust;
+                  const deltaColor =
+                    m.deltaPct === 0 ? THEME.muted : improved ? THEME.sage : THEME.rust;
                   return (
-                    <StatCard
+                    <div
                       key={m.label}
-                      label={m.label}
-                      value={fmtINRFull(m.curr)}
-                      numericValue={m.curr}
-                      formatValue={fmtINRFull}
-                      icon={m.icon}
-                      color={deltaColor}
-                      sub={`${m.deltaPct >= 0 ? "+" : ""}${m.deltaPct.toFixed(0)}% vs ${fmtINRFull(m.prev)}`}
-                      subColor={deltaColor}
-                    />
+                      style={{
+                        padding: "16px",
+                        borderRadius: 12,
+                        background: "var(--surface-0)",
+                        border: `1px solid ${THEME.line}`,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase" }}>
+                          {m.label}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "2px 8px",
+                            borderRadius: 6,
+                            background: `color-mix(in srgb, ${deltaColor} 12%, transparent)`,
+                            color: deltaColor,
+                          }}
+                        >
+                          {m.deltaPct >= 0 ? "+" : ""}
+                          {m.deltaPct.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontSize: 20,
+                          fontWeight: 800,
+                          color: THEME.ink,
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        <Money value={m.curr} variant="full" />
+                      </div>
+                      <div style={{ fontSize: 11, color: THEME.muted, display: "flex", justifyContent: "space-between" }}>
+                        <span>Prior: <Money value={m.prev} variant="full" /></span>
+                        <span style={{ color: deltaColor, fontWeight: 600 }}>
+                          {m.curr - m.prev >= 0 ? "+" : ""}
+                          <Money value={m.curr - m.prev} variant="full" />
+                        </span>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             </Card>
           )}
 
-          {/* ─── Interactive Scrollspy Tab Navigation ──────────────── */}
+          {/* ─── Interactive Scrollspy Tab Navigation ────────────────── */}
           <div
             className="no-print"
             style={{
               display: "flex",
               gap: 8,
-              flexWrap: "wrap",
-              justifyContent: "center",
-              marginBottom: 24,
-              // Deliberately NOT position:sticky — this row sits directly inline between
-              // dense stat cards with no reserved gutter for it. A pinned bar here always
-              // ends up parked on top of whatever card row happens to scroll to that exact
-              // height (e.g. covering the NET SAVINGS/NEW INVESTMENTS stat boxes), which
-              // reads as broken no matter how opaque its background is. A normal in-flow
-              // row that scrolls away with the page avoids ever covering content.
+              overflowX: "auto",
+              padding: "10px 12px",
+              marginBottom: 20,
               background: "var(--surface-0)",
-              padding: "12px 8px",
-              borderRadius: 16,
+              borderRadius: 14,
               border: `1px solid ${THEME.line}`,
+              scrollbarWidth: "none",
             }}
           >
             {[
-              { id: "nw", label: "Net Worth" },
-              { id: "income", label: "Income" },
-              { id: "expense", label: "Expenses" },
-              { id: "savings", label: "Savings" },
-              { id: "allocation", label: "Assets" },
+              { id: "nw", label: "Net Worth", icon: Wallet },
+              { id: "income", label: "Income", icon: TrendingUp },
+              { id: "expense", label: "Expenses", icon: Receipt },
+              { id: "savings", label: "Savings", icon: PiggyBank },
+              { id: "allocation", label: "Assets", icon: PieIcon },
               ...(debtData.loanCount > 0 || debtData.ccOutstanding > 0
-                ? [{ id: "debt", label: "Debt" }]
+                ? [{ id: "debt", label: "Debt", icon: Landmark }]
                 : []),
               ...(insuranceData.licCount > 0 || insuranceData.termCount > 0
-                ? [{ id: "insurance", label: "Insurance" }]
+                ? [{ id: "insurance", label: "Insurance", icon: Shield }]
                 : []),
-              ...(taxData.totalTaxPaid > 0 ? [{ id: "tax", label: "Tax" }] : []),
-              ...(goalsData.totalGoals > 0 ? [{ id: "goals", label: "Goals" }] : []),
-              ...(highlights.length > 0 ? [{ id: "highlights", label: "Highlights" }] : []),
-              { id: "health", label: "Health" },
+              ...(taxData.totalTaxPaid > 0 ? [{ id: "tax", label: "Tax", icon: Receipt }] : []),
+              ...(goalsData.totalGoals > 0 ? [{ id: "goals", label: "Goals", icon: Target }] : []),
+              ...(highlights.length > 0 ? [{ id: "highlights", label: "Highlights", icon: Sparkles }] : []),
+              { id: "health", label: "Financial Health", icon: BarChart2 },
             ].map((s) => {
               const isActive = activeSection === s.id;
+              const Icon = s.icon;
               return (
                 <button
                   key={s.id}
                   onClick={() => {
                     const el = document.getElementById(s.id);
-                    // The page scrolls inside `.app-main-content`, not `window` — scrolling
-                    // window here was a no-op since that element never scrolls.
                     const container = el?.closest(".app-main-content") as HTMLElement | null;
                     if (el && container) {
                       const yOffset = -80;
@@ -1908,20 +2291,32 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                   }}
                   aria-current={isActive ? "true" : undefined}
                   className={`demat-portfolio-pill ${isActive ? "active" : ""}`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "7px 14px",
+                    borderRadius: 10,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                  }}
                 >
-                  {s.label}
+                  <Icon size={14} />
+                  <span>{s.label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* ─── Hero Stat Cards with Micro-Sparklines ──────────────── */}
+          {/* ─── Hero Stat Cards with Micro-Sparklines ───────────────── */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
               gap: 14,
-              marginBottom: 24,
+              marginBottom: 20,
             }}
           >
             <StatCard
@@ -1976,63 +2371,130 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
             />
           </div>
 
-          {/* ─── (a) Net Worth Trend Area Chart ──────────────────────── */}
+          {/* ─── (a) Net Worth Trend & Trajectory ─────────────────────── */}
           {netWorthData.chartData.length > 1 && (
-            <Card style={{ padding: 24, marginBottom: 24 }}>
-              <CardHeading icon={TrendingUp} title="Net Worth Trend" id="nw" />
+            <Card style={{ padding: 24, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <CardHeading icon={TrendingUp} title="Net Worth Trend" id="nw" />
+                <div className="no-print" style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() => setNwChartMode("curve")}
+                    className={`demat-portfolio-pill ${nwChartMode === "curve" ? "active" : ""}`}
+                    style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8 }}
+                  >
+                    Valuation Curve
+                  </button>
+                  <button
+                    onClick={() => setNwChartMode("delta")}
+                    className={`demat-portfolio-pill ${nwChartMode === "delta" ? "active" : ""}`}
+                    style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8 }}
+                  >
+                    Monthly Growth (Δ)
+                  </button>
+                </div>
+              </div>
+
+              {/* Peak & Lowest Markers */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                  gap: 10,
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--surface-0)", border: `1px solid ${THEME.line}` }}>
+                  <div style={{ fontSize: 10, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>Peak Valuation</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: THEME.sage }}><Money value={netWorthData.peakNW} variant="full" /></div>
+                </div>
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--surface-0)", border: `1px solid ${THEME.line}` }}>
+                  <div style={{ fontSize: 10, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>Lowest Valuation</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: THEME.ink }}><Money value={netWorthData.lowestNW} variant="full" /></div>
+                </div>
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--surface-0)", border: `1px solid ${THEME.line}` }}>
+                  <div style={{ fontSize: 10, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>Net Wealth Added</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: nwChangeColor }}>
+                    {netWorthData.change >= 0 ? "+" : ""}<Money value={netWorthData.change} variant="full" />
+                  </div>
+                </div>
+              </div>
+
               <div style={{ height: 260 }}>
-                <div style={{ width: "100%", height: "100%", position: "relative" }}><ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <AreaChart data={netWorthData.chartData}>
-                    <defs>
-                      <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={THEME.accent} stopOpacity={0.25} />
-                        <stop offset="95%" stopColor={THEME.accent} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="4 4"
-                      stroke={THEME.line}
-                      vertical={false}
-                      opacity={0.4}
-                    />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: THEME.muted }} />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: THEME.muted }}
-                      tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINR(v))}
-                      width={65}
-                    />
-                    <Tooltip
-                      content={<GlassTooltip />}
-                      cursor={{ stroke: THEME.line, strokeWidth: 1.5 }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="value"
-                      name="Net Worth"
-                      stroke={THEME.accent}
-                      fill="url(#nwGrad)"
-                      strokeWidth={3}
-                      dot={false}
-                      activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer></div>
+                <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    {nwChartMode === "curve" ? (
+                      <AreaChart data={netWorthData.chartData}>
+                        <defs>
+                          <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={THEME.accent} stopOpacity={0.25} />
+                            <stop offset="95%" stopColor={THEME.accent} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} vertical={false} opacity={0.4} />
+                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: THEME.muted }} />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: THEME.muted }}
+                          tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINR(v))}
+                          width={65}
+                        />
+                        <Tooltip content={<GlassTooltip />} cursor={{ stroke: THEME.line, strokeWidth: 1.5 }} />
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          name="Net Worth"
+                          stroke={THEME.accent}
+                          fill="url(#nwGrad)"
+                          strokeWidth={3}
+                          dot={false}
+                          activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
+                        />
+                      </AreaChart>
+                    ) : (
+                      <BarChart data={netWorthData.chartData} barSize={26}>
+                        <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} vertical={false} opacity={0.4} />
+                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: THEME.muted }} />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: THEME.muted }}
+                          tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINR(v))}
+                          width={65}
+                        />
+                        <Tooltip content={<GlassTooltip />} cursor={{ fill: "color-mix(in srgb, var(--t-line) 15%, transparent)" }} />
+                        <ReferenceLine y={0} stroke={THEME.line} />
+                        <Bar
+                          dataKey="delta"
+                          name="Monthly Growth"
+                          radius={[4, 4, 0, 0]}
+                        >
+                          {netWorthData.chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.delta >= 0 ? THEME.sage : THEME.rust} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
               </div>
             </Card>
           )}
 
-          {/* ─── Income & Expense (two-column grid) ─────────────────── */}
+          {/* ─── Cash Flow Twins: Income & Expense (two-column grid) ──── */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-              gap: 16,
-              marginBottom: 24,
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(340px, 100%), 1fr))",
+              gap: 18,
+              marginBottom: 20,
             }}
           >
             {/* (b) Income Summary with rounded Gradient Bar Chart */}
             <Card style={{ padding: 24 }}>
-              <CardHeading icon={Wallet} title="Income Summary" id="income" color={THEME.sage} />
+              <CardHeading
+                icon={Wallet}
+                title="Income Summary"
+                id="income"
+                color={THEME.sage}
+                badge={`${incomeData.streamCount} Streams`}
+              />
               <div
                 style={{
                   display: "grid",
@@ -2049,8 +2511,10 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                 <MetricTile
                   label="Monthly Avg"
                   value={fmtINRFull(incomeData.totalIncome / (fyMonthsElapsed || 12))}
+                  sub={`Active for ${fyMonthsElapsed || 12} mos`}
                 />
               </div>
+
               {incomeData.breakdown.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div
@@ -2063,7 +2527,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       marginBottom: 10,
                     }}
                   >
-                    By Category
+                    Income Streams
                   </div>
                   {incomeData.breakdown.map((cat, idx) => (
                     <div
@@ -2079,16 +2543,19 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ flex: 1, fontSize: 12, color: THEME.muted }}>{cat.name}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: THEME.ink }}>
+                      <span style={{ flex: 1, fontSize: 12.5, color: THEME.ink, fontWeight: 500 }}>
+                        {cat.name}
+                      </span>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: THEME.ink }}>
                         <Money value={cat.value} variant="full" />
                       </span>
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 11,
                           color: THEME.muted,
-                          minWidth: 32,
+                          minWidth: 36,
                           textAlign: "right",
+                          fontWeight: 600,
                         }}
                       >
                         {incomeData.totalIncome > 0
@@ -2100,40 +2567,30 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                   ))}
                 </div>
               )}
+
               {incomeData.monthlyChart.some((d) => d.income > 0) && (
-                <div style={{ height: 160 }}>
-                  <div style={{ width: "100%", height: "100%", position: "relative" }}><ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <BarChart data={incomeData.monthlyChart} barSize={32}>
-                      <defs>
-                        <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={THEME.sage} stopOpacity={0.85} />
-                          <stop offset="100%" stopColor={THEME.sage} stopOpacity={0.3} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        strokeDasharray="4 4"
-                        stroke={THEME.line}
-                        vertical={false}
-                        opacity={0.4}
-                      />
-                      <XAxis dataKey="month" tick={{ fontSize: 9, fill: THEME.muted }} />
-                      <YAxis
-                        tick={{ fontSize: 9, fill: THEME.muted }}
-                        tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINRFull(v))}
-                        width={50}
-                      />
-                      <Tooltip
-                        content={<GlassTooltip />}
-                        cursor={{ fill: "color-mix(in srgb, var(--t-line) 15%, transparent)" }}
-                      />
-                      <Bar
-                        dataKey="income"
-                        name="Income"
-                        fill="url(#incomeGrad)"
-                        radius={[6, 6, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer></div>
+                <div style={{ height: 160, marginTop: 12 }}>
+                  <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <BarChart data={incomeData.monthlyChart} barSize={26}>
+                        <defs>
+                          <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={THEME.sage} stopOpacity={0.9} />
+                            <stop offset="100%" stopColor={THEME.sage} stopOpacity={0.3} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} vertical={false} opacity={0.4} />
+                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: THEME.muted }} />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: THEME.muted }}
+                          tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINR(v))}
+                          width={50}
+                        />
+                        <Tooltip content={<GlassTooltip />} cursor={{ fill: "color-mix(in srgb, var(--t-line) 15%, transparent)" }} />
+                        <Bar dataKey="income" name="Income" fill="url(#incomeGrad)" radius={[5, 5, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               )}
             </Card>
@@ -2141,7 +2598,13 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
             {/* (c) Expense Summary with interactive Donut Chart */}
             <Card style={{ padding: 24 }}>
               <div className="page-break" />
-              <CardHeading icon={Receipt} title="Expense Summary" id="expense" color={THEME.rust} />
+              <CardHeading
+                icon={Receipt}
+                title="Expense Summary"
+                id="expense"
+                color={THEME.rust}
+                badge={`Burn: ${fmtINR(expenseData.dailyBurn)}/day`}
+              />
               <div
                 style={{
                   display: "grid",
@@ -2155,9 +2618,14 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                   value={fmtINRFull(expenseData.totalExpense)}
                   color={THEME.rust}
                 />
-                <MetricTile label="Monthly Avg" value={fmtINRFull(expenseData.avgMonthly)} />
+                <MetricTile
+                  label="Monthly Avg"
+                  value={fmtINRFull(expenseData.avgMonthly)}
+                  sub={`Daily: ~${fmtINR(expenseData.dailyBurn)}`}
+                />
               </div>
-              <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ flex: 1, minWidth: 160 }}>
                   <div
                     style={{
@@ -2167,88 +2635,113 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       letterSpacing: "0.08em",
                       color: THEME.muted,
                       marginBottom: 10,
+                      display: "flex",
+                      justifyContent: "space-between",
                     }}
                   >
-                    Top Categories
-                  </div>
-                  {expenseData.breakdown.slice(0, 6).map((cat, idx) => (
-                    <div
-                      key={cat.name}
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}
-                    >
-                      <div
+                    <span>Top Categories</span>
+                    {expenseData.breakdown.length > 5 && (
+                      <button
+                        onClick={() => setShowAllExpenses(!showAllExpenses)}
+                        className="no-print"
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: PIE_COLORS[idx % PIE_COLORS.length],
-                          flexShrink: 0,
+                          background: "none",
+                          border: "none",
+                          color: THEME.accent,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer",
                         }}
-                      />
-                      <span style={{ flex: 1, fontSize: 12, color: THEME.muted }}>{cat.name}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: THEME.ink }}>
-                        <Money value={cat.value} variant="full" />
-                      </span>
-                    </div>
-                  ))}
+                      >
+                        {showAllExpenses ? "Show Top 5" : "View All"}
+                      </button>
+                    )}
+                  </div>
+                  {(showAllExpenses ? expenseData.breakdown : expenseData.breakdown.slice(0, 5)).map(
+                    (cat, idx) => (
+                      <div
+                        key={cat.name}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}
+                      >
+                        <div
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: PIE_COLORS[idx % PIE_COLORS.length],
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={{ flex: 1, fontSize: 12.5, color: THEME.ink, fontWeight: 500 }}>
+                          {cat.name}
+                        </span>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: THEME.ink }}>
+                          <Money value={cat.value} variant="full" />
+                        </span>
+                      </div>
+                    )
+                  )}
                 </div>
+
                 {expenseData.top5.length > 0 && (
                   <div style={{ width: 170, height: 170, flexShrink: 0, position: "relative" }}>
-                    <div style={{ width: "100%", height: "100%", position: "relative" }}><ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <PieChart>
-                        <Pie
-                          data={expenseData.top5}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={70}
-                          innerRadius={50}
-                          paddingAngle={3}
-                          onMouseEnter={(_, idx) => {
-                            const item = expenseData.top5[idx];
-                            if (item) setHoveredExpense({ name: item.name, value: item.value });
-                          }}
-                          onMouseLeave={() => setHoveredExpense(null)}
-                        >
-                          {expenseData.top5.map((_, idx) => (
-                            <Cell
-                              key={idx}
-                              fill={PIE_COLORS[idx % PIE_COLORS.length]}
-                              style={{ outline: "none", cursor: "pointer" }}
-                            />
-                          ))}
-                        </Pie>
-                        <text
-                          x="50%"
-                          y="46%"
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            fill: THEME.muted,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
-                          }}
-                        >
-                          {hoveredExpense ? hoveredExpense.name : "Total Expenses"}
-                        </text>
-                        <text
-                          x="50%"
-                          y="58%"
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          style={{ fontSize: 13, fontWeight: 800, fill: THEME.ink }}
-                        >
-                          {privacyMode
-                            ? "••••"
-                            : fmtINRFull(
-                                hoveredExpense ? hoveredExpense.value : expenseData.totalExpense
-                              )}
-                        </text>
-                      </PieChart>
-                    </ResponsiveContainer></div>
+                    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <PieChart>
+                          <Pie
+                            data={expenseData.top5}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={72}
+                            innerRadius={52}
+                            paddingAngle={3}
+                            onMouseEnter={(_, idx) => {
+                              const item = expenseData.top5[idx];
+                              if (item) setHoveredExpense({ name: item.name, value: item.value });
+                            }}
+                            onMouseLeave={() => setHoveredExpense(null)}
+                          >
+                            {expenseData.top5.map((_, idx) => (
+                              <Cell
+                                key={idx}
+                                fill={PIE_COLORS[idx % PIE_COLORS.length]}
+                                style={{ outline: "none", cursor: "pointer" }}
+                              />
+                            ))}
+                          </Pie>
+                          <text
+                            x="50%"
+                            y="46%"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            style={{
+                              fontSize: 9.5,
+                              fontWeight: 700,
+                              fill: THEME.muted,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.06em",
+                            }}
+                          >
+                            {hoveredExpense ? hoveredExpense.name : "Expenses"}
+                          </text>
+                          <text
+                            x="50%"
+                            y="58%"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            style={{ fontSize: 13, fontWeight: 800, fill: THEME.ink }}
+                          >
+                            {privacyMode
+                              ? "••••"
+                              : fmtINR(
+                                  hoveredExpense ? hoveredExpense.value : expenseData.totalExpense
+                                )}
+                          </text>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2259,14 +2752,20 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-              gap: 16,
-              marginBottom: 24,
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(340px, 100%), 1fr))",
+              gap: 18,
+              marginBottom: 20,
             }}
           >
-            {/* (d) Savings & Investment details */}
+            {/* (d) Savings & Wealth Accumulation */}
             <Card style={{ padding: 24 }}>
-              <CardHeading icon={PiggyBank} title="Savings & Investment" id="savings" />
+              <CardHeading
+                icon={PiggyBank}
+                title="Savings & Investment"
+                id="savings"
+                color={THEME.accent}
+                badge={`Savings Rate: ${savingsData.savingsRate.toFixed(0)}%`}
+              />
               <div
                 style={{
                   display: "grid",
@@ -2286,6 +2785,30 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                   color={THEME.accent}
                 />
               </div>
+
+              {/* 50/30/20 Rule Visualization */}
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: "var(--surface-0)",
+                  border: `1px solid ${THEME.line}`,
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 11, fontWeight: 700, color: THEME.muted }}>
+                  <span>50/30/20 Budget Target</span>
+                  <span style={{ color: savingsData.savingsRate >= 20 ? THEME.sage : THEME.gold }}>
+                    {savingsData.savingsRate >= 20 ? "Target Achieved (≥20%)" : "Under Target (<20%)"}
+                  </span>
+                </div>
+                <ProgressBar
+                  pct={savingsData.savingsRate}
+                  color={savingsData.savingsRate >= 20 ? THEME.sage : THEME.gold}
+                  height={8}
+                />
+              </div>
+
               <div
                 style={{
                   fontSize: 11,
@@ -2303,9 +2826,6 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                 { label: "Mutual Funds", value: savingsData.mfBuys },
                 { label: "Fixed Deposits", value: savingsData.fdAdds },
                 { label: "PPF", value: savingsData.ppfAdds },
-                // Reflects TODAY's active SIP mandates annualized, not what actually ran during
-                // the selected FY — only meaningful as a forward run-rate for the ongoing FY, so
-                // it's hidden for past (closed) FYs where it would misrepresent history.
                 ...(netWorthData.isCurrentFY
                   ? [{ label: "Active SIPs (run-rate)", value: savingsData.sipTotal }]
                   : []),
@@ -2314,6 +2834,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                 .map((r) => (
                   <DataRow key={r.label} label={r.label} value={fmtINRFull(r.value)} />
                 ))}
+
               {(savingsData.stcg !== 0 || savingsData.ltcg !== 0) && (
                 <>
                   <div
@@ -2327,7 +2848,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       marginTop: 16,
                     }}
                   >
-                    Capital Gains
+                    Realized Capital Gains
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <MetricTile
@@ -2348,69 +2869,81 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
             {/* (e) Asset Allocation Donut Chart with Progress Bars */}
             <Card style={{ padding: 24 }}>
               <div className="page-break" />
-              <CardHeading icon={PieIcon} title="Asset Allocation" id="allocation" />
+              <CardHeading
+                icon={PieIcon}
+                title="Asset Allocation"
+                id="allocation"
+                badge={`Risk: ${assetAllocation.riskProfile}`}
+              />
               {isPastFY && (
                 <InfoBanner>
                   Asset allocation reflects current holdings — historical snapshot not available for
                   past FYs.
                 </InfoBanner>
               )}
-              <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
                 {assetAllocation.alloc.length > 0 && (
                   <div style={{ width: 180, height: 180, flexShrink: 0, position: "relative" }}>
-                    <div style={{ width: "100%", height: "100%", position: "relative" }}><ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <PieChart>
-                        <Pie
-                          data={assetAllocation.alloc}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={75}
-                          innerRadius={55}
-                          paddingAngle={3}
-                          onMouseEnter={(_, idx) => {
-                            const item = assetAllocation.alloc[idx];
-                            if (item) setHoveredAsset({ name: item.name, value: item.value });
-                          }}
-                          onMouseLeave={() => setHoveredAsset(null)}
-                        >
-                          {assetAllocation.alloc.map((a, idx) => (
-                            <Cell
-                              key={idx}
-                              fill={ASSET_CLASS_COLORS[a.name] || PIE_COLORS[idx % PIE_COLORS.length]}
-                              style={{ outline: "none", cursor: "pointer" }}
-                            />
-                          ))}
-                        </Pie>
-                        <text
-                          x="50%"
-                          y="46%"
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            fill: THEME.muted,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
-                          }}
-                        >
-                          {hoveredAsset ? hoveredAsset.name : "Total Assets"}
-                        </text>
-                        <text
-                          x="50%"
-                          y="58%"
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          style={{ fontSize: 13, fontWeight: 800, fill: THEME.ink }}
-                        >
-                          {privacyMode
-                            ? "••••"
-                            : fmtINRFull(hoveredAsset ? hoveredAsset.value : assetAllocation.total)}
-                        </text>
-                      </PieChart>
-                    </ResponsiveContainer></div>
+                    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <PieChart>
+                          <Pie
+                            data={assetAllocation.alloc}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={76}
+                            innerRadius={56}
+                            paddingAngle={3}
+                            onMouseEnter={(_, idx) => {
+                              const item = assetAllocation.alloc[idx];
+                              if (item) setHoveredAsset({ name: item.name, value: item.value });
+                            }}
+                            onMouseLeave={() => setHoveredAsset(null)}
+                          >
+                            {assetAllocation.alloc.map((a, idx) => (
+                              <Cell
+                                key={idx}
+                                fill={
+                                  ASSET_CLASS_COLORS[a.name] ||
+                                  PIE_COLORS[idx % PIE_COLORS.length]
+                                }
+                                style={{ outline: "none", cursor: "pointer" }}
+                              />
+                            ))}
+                          </Pie>
+                          <text
+                            x="50%"
+                            y="46%"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            style={{
+                              fontSize: 9.5,
+                              fontWeight: 700,
+                              fill: THEME.muted,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.06em",
+                            }}
+                          >
+                            {hoveredAsset ? hoveredAsset.name : "Total Assets"}
+                          </text>
+                          <text
+                            x="50%"
+                            y="58%"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            style={{ fontSize: 13, fontWeight: 800, fill: THEME.ink }}
+                          >
+                            {privacyMode
+                              ? "••••"
+                              : fmtINR(
+                                  hoveredAsset ? hoveredAsset.value : assetAllocation.total
+                                )}
+                          </text>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 )}
                 <div style={{ flex: 1, minWidth: 160 }}>
@@ -2429,7 +2962,9 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                               width: 8,
                               height: 8,
                               borderRadius: "50%",
-                              background: ASSET_CLASS_COLORS[a.name] || PIE_COLORS[idx % PIE_COLORS.length],
+                              background:
+                                ASSET_CLASS_COLORS[a.name] ||
+                                PIE_COLORS[idx % PIE_COLORS.length],
                             }}
                           />
                           <span style={{ fontSize: 12, fontWeight: 600, color: THEME.ink }}>
@@ -2438,7 +2973,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: THEME.ink }}>
                           <Money value={a.value} variant="full" />
-                          <span style={{ fontSize: 10, color: THEME.muted, marginLeft: 4 }}>
+                          <span style={{ fontSize: 10.5, color: THEME.muted, marginLeft: 4 }}>
                             {assetAllocation.total > 0
                               ? ((a.value / assetAllocation.total) * 100).toFixed(0)
                               : 0}
@@ -2448,9 +2983,13 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       </div>
                       <ProgressBar
                         pct={
-                          assetAllocation.total > 0 ? (a.value / assetAllocation.total) * 100 : 0
+                          assetAllocation.total > 0
+                            ? (a.value / assetAllocation.total) * 100
+                            : 0
                         }
-                        color={ASSET_CLASS_COLORS[a.name] || PIE_COLORS[idx % PIE_COLORS.length]}
+                        color={
+                          ASSET_CLASS_COLORS[a.name] || PIE_COLORS[idx % PIE_COLORS.length]
+                        }
                       />
                     </div>
                   ))}
@@ -2458,7 +2997,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     style={{
                       marginTop: 12,
                       padding: "10px 12px",
-                      borderRadius: 8,
+                      borderRadius: 10,
                       background: "var(--surface-1)",
                       border: `1px solid ${THEME.line}`,
                     }}
@@ -2470,7 +3009,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       <span
                         style={{
                           fontFamily: "var(--font-display)",
-                          fontSize: 13,
+                          fontSize: 13.5,
                           fontWeight: 800,
                           color: THEME.accent,
                         }}
@@ -2492,15 +3031,21 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-                gap: 16,
-                marginBottom: 24,
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(340px, 100%), 1fr))",
+                gap: 18,
+                marginBottom: 20,
               }}
             >
               {/* (f) Debt details */}
               {(debtData.loanCount > 0 || debtData.ccOutstanding > 0) && (
                 <Card style={{ padding: 24 }}>
-                  <CardHeading icon={Landmark} title="Debt Summary" id="debt" color={THEME.rust} />
+                  <CardHeading
+                    icon={Landmark}
+                    title="Debt Summary"
+                    id="debt"
+                    color={THEME.rust}
+                    badge={`DTI: ${debtData.dtiRatio.toFixed(0)}%`}
+                  />
                   {isPastFY && (
                     <InfoBanner>
                       Debt figures reflect current outstanding — historical balances not available
@@ -2546,7 +3091,12 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
               {(insuranceData.licCount > 0 || insuranceData.termCount > 0) && (
                 <Card style={{ padding: 24 }}>
                   <div className="page-break" />
-                  <CardHeading icon={Shield} title="Insurance Coverage" id="insurance" />
+                  <CardHeading
+                    icon={Shield}
+                    title="Insurance Coverage"
+                    id="insurance"
+                    badge={`Cover: ${insuranceData.adequacyRatio.toFixed(1)}x Income`}
+                  />
                   {isPastFY && (
                     <InfoBanner>
                       Insurance data reflects current policies — historical coverage not available
@@ -2571,10 +3121,10 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       value={`${insuranceData.adequacyRatio.toFixed(1)}x`}
                       sub={
                         insuranceData.adequacyRatio >= 10
-                          ? "Adequate"
+                          ? "Adequate (≥10x)"
                           : insuranceData.adequacyRatio >= 5
                             ? "Moderate"
-                            : "Low"
+                            : "Low (<5x)"
                       }
                       color={
                         insuranceData.adequacyRatio >= 10
@@ -2596,7 +3146,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       style={{
                         marginTop: 12,
                         padding: "10px 14px",
-                        borderRadius: 8,
+                        borderRadius: 10,
                         background: "var(--surface-1)",
                         border: `1px solid ${THEME.line}`,
                         fontSize: 12,
@@ -2606,7 +3156,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                         gap: 8,
                       }}
                     >
-                      <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                      <AlertTriangle size={15} style={{ flexShrink: 0, color: THEME.gold }} />
                       <span>
                         Coverage is {insuranceData.adequacyRatio.toFixed(1)}x annual income.
                         Recommended: at least 10x (
@@ -2624,15 +3174,21 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-                gap: 16,
-                marginBottom: 24,
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(340px, 100%), 1fr))",
+                gap: 18,
+                marginBottom: 20,
               }}
             >
               {/* (h) Tax details */}
               {(taxData.totalTaxPaid > 0 || taxData.paymentCount > 0) && (
                 <Card style={{ padding: 24 }}>
-                  <CardHeading icon={Receipt} title="Tax Summary" id="tax" color={THEME.gold} />
+                  <CardHeading
+                    icon={Receipt}
+                    title="Tax Summary"
+                    id="tax"
+                    color={THEME.gold}
+                    badge={`Regime: ${taxData.regime === "new" ? "New" : "Old"}`}
+                  />
                   <div
                     style={{
                       display: "grid",
@@ -2677,7 +3233,12 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
               {/* (i) Goals Progress with rounded indicators */}
               {goalsData.totalGoals > 0 && (
                 <Card style={{ padding: 24 }}>
-                  <CardHeading icon={Target} title="Goals Progress" id="goals" />
+                  <CardHeading
+                    icon={Target}
+                    title="Goals Progress"
+                    id="goals"
+                    badge={`Funded: ${goalsData.overallPct.toFixed(0)}%`}
+                  />
                   <div
                     style={{
                       display: "grid",
@@ -2707,14 +3268,15 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                           marginBottom: 4,
                         }}
                       >
-                        <span style={{ fontSize: 12, fontWeight: 600, color: THEME.ink }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: THEME.ink }}>
                           {g.name}
                         </span>
-                        <span style={{ fontSize: 11, color: THEME.muted }}>
-                          <Money value={g.saved} variant="full" /> / <Money value={g.target} variant="full" />
+                        <span style={{ fontSize: 11.5, color: THEME.muted }}>
+                          <Money value={g.saved} variant="full" /> /{" "}
+                          <Money value={g.target} variant="full" />
                           <span
                             style={{
-                              marginLeft: 4,
+                              marginLeft: 5,
                               fontWeight: 700,
                               color: g.pct >= 100 ? THEME.sage : THEME.accent,
                             }}
@@ -2725,7 +3287,9 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                       </div>
                       <ProgressBar
                         pct={g.pct}
-                        color={g.pct >= 100 ? THEME.sage : g.pct >= 50 ? THEME.accent : THEME.gold}
+                        color={
+                          g.pct >= 100 ? THEME.sage : g.pct >= 50 ? THEME.accent : THEME.gold
+                        }
                       />
                     </div>
                   ))}
@@ -2738,12 +3302,13 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
           {highlights.length > 0 && (
             <>
               <div className="page-break" />
-              <Card style={{ padding: 24, marginBottom: 24 }}>
+              <Card style={{ padding: 24, marginBottom: 20 }}>
                 <CardHeading
                   icon={Sparkles}
-                  title="Key Highlights"
+                  title="Key Highlights & Milestones"
                   id="highlights"
                   color={THEME.gold}
+                  badge={`${highlights.length} Highlights`}
                 />
                 <div
                   style={{
@@ -2763,34 +3328,38 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                         padding: "16px",
                         borderRadius: 12,
                         background: "var(--t-card-bg)",
-                        border: `1.5px solid ${THEME.line}`,
+                        border: `1px solid ${THEME.line}`,
                         borderLeft: `4px solid ${h.color}`,
                       }}
                     >
                       <span
                         style={{
                           lineHeight: 1,
-                          background: `color-mix(in srgb, ${h.color} 10%, transparent)`,
-                          padding: 6,
+                          background: `color-mix(in srgb, ${h.color} 12%, transparent)`,
+                          padding: 7,
                           borderRadius: 8,
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
                       >
-                        <h.icon size={18} color={h.color} />
+                        <h.icon size={17} color={h.color} />
                       </span>
-                      <span
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 600,
-                          color: THEME.ink,
-                          lineHeight: 1.6,
-                          marginTop: 2,
-                        }}
-                      >
-                        {h.text}
-                      </span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>
+                          {h.category}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            color: THEME.ink,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {h.text}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2798,13 +3367,18 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
             </>
           )}
 
-          {/* ─── Financial Health Bento Scorecard with Circular Progress ── */}
-          <Card style={{ padding: 24, marginBottom: 24 }}>
-            <CardHeading icon={BarChart2} title="Financial Health Snapshot" id="health" />
+          {/* ─── Financial Health Scorecard (Composite 360° Bento) ────── */}
+          <Card style={{ padding: 24, marginBottom: 20 }}>
+            <CardHeading
+              icon={BarChart2}
+              title="Financial Health Snapshot"
+              id="health"
+              badge={healthScore.tier}
+            />
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
                 gap: 14,
               }}
             >
@@ -2903,12 +3477,12 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                 <div
                   key={m.label}
                   style={{
-                    padding: "20px",
-                    borderRadius: 16,
+                    padding: "18px 20px",
+                    borderRadius: 14,
                     background:
                       "linear-gradient(135deg, var(--surface-0) 0%, var(--surface-1) 100%)",
                     border: `1.5px solid ${THEME.line}`,
-                    borderLeft: `2.5px solid ${m.color}`,
+                    borderLeft: `3px solid ${m.color}`,
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
@@ -2917,7 +3491,11 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                   }}
                 >
                   <div
-                    style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                    }}
                   >
                     <div
                       style={{
@@ -2926,7 +3504,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                         fontWeight: 700,
                         textTransform: "uppercase",
                         letterSpacing: "0.08em",
-                        marginBottom: 6,
+                        marginBottom: 4,
                       }}
                     >
                       {m.label}
@@ -2934,8 +3512,8 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                     <div
                       style={{
                         fontFamily: "var(--font-display)",
-                        fontSize: 24,
-                        fontWeight: 600,
+                        fontSize: 22,
+                        fontWeight: 700,
                         color: m.color,
                         letterSpacing: "-0.03em",
                         fontVariantNumeric: "tabular-nums",
@@ -2951,17 +3529,21 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
                           : m.color === THEME.gold
                             ? "gold"
                             : m.color === THEME.muted
-                              ? "muted"
+                              ? "neutral"
                               : "rust"
                       }
-                      style={{ fontSize: 9, marginTop: 8, padding: "2px 8px" }}
+                      style={{ fontSize: 9.5, marginTop: 8, padding: "2px 8px" }}
                     >
                       {m.status}
                     </Badge>
                   </div>
 
                   <div className="no-print">
-                    <CircularProgress pct={m.pct} color={m.color} size={55} />
+                    <CircularProgress pct={m.pct} color={m.color} size={52}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: THEME.ink }}>
+                        {m.pct.toFixed(0)}%
+                      </span>
+                    </CircularProgress>
                   </div>
                 </div>
               ))}
@@ -2970,7 +3552,12 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
 
           {/* ─── Footer ──────────────────────────────────────────────── */}
           <div
-            style={{ textAlign: "center", padding: "8px 0 32px", fontSize: 11, color: THEME.muted }}
+            style={{
+              textAlign: "center",
+              padding: "12px 0 36px",
+              fontSize: 11.5,
+              color: THEME.muted,
+            }}
           >
             Generated on{" "}
             {new Date().toLocaleDateString("en-IN", {
@@ -2978,7 +3565,7 @@ export const AnnualReportTab = ({ state, metrics, marketData, activeProfile = "a
               month: "long",
               year: "numeric",
             })}{" "}
-            &middot; ArthaDrishti Dashboard
+            &middot; ArthaDrishti Financial Intelligence
           </div>
         </>
       )}
