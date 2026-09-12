@@ -204,7 +204,7 @@ const CardHeading = ({
       </div>
     </div>
     {badge && (
-      <Badge variant="neutral" style={{ fontSize: 10, padding: "2px 8px" }}>
+      <Badge variant="muted" style={{ fontSize: 10, padding: "2px 8px" }}>
         {badge}
       </Badge>
     )}
@@ -2000,7 +2000,7 @@ export const AnnualReportTab = ({
                       Ongoing FY
                     </Badge>
                   ) : (
-                    <Badge variant="neutral" style={{ fontSize: 9.5, padding: "2px 8px" }}>
+                    <Badge variant="muted" style={{ fontSize: 9.5, padding: "2px 8px" }}>
                       Closed FY
                     </Badge>
                   )}
@@ -3529,7 +3529,7 @@ export const AnnualReportTab = ({
                           : m.color === THEME.gold
                             ? "gold"
                             : m.color === THEME.muted
-                              ? "neutral"
+                              ? "muted"
                               : "rust"
                       }
                       style={{ fontSize: 9.5, marginTop: 8, padding: "2px 8px" }}

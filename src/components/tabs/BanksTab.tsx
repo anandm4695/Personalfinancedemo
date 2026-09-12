@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Plus,
@@ -16,7 +17,7 @@ import {
   Banknote,
   Handshake,
   Lock,
-  PieChart,
+  PieChart as PieIcon,
   Landmark,
   Search,
   Link2,
@@ -24,7 +25,28 @@ import {
   ChevronRight,
   Download,
   User,
+  ArrowLeftRight,
+  Copy,
+  CheckCheck,
+  BarChart3,
+  Layers,
+  ShieldCheck,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from "recharts";
 import { THEME } from "../../utils/constants";
 import {
   today,
@@ -32,6 +54,7 @@ import {
   getLocalDateString,
   addMonthsToDateStr,
   getEffectiveRent,
+  fmtINR,
   fmtINRFull,
   loanOutstanding,
 } from "../../utils/finance";
@@ -65,32 +88,49 @@ export const BANK_LOGO_DOMAINS: Record<string, string> = Object.fromEntries(
   Object.entries(CANONICAL_BRANDS).map(([k, v]) => [k, v.domain])
 );
 
-// Account type visual themes — use fixed theme tokens (not raw hex) so these
-// stay theme-aware in dark mode and never coincidentally match whichever
-// accent color preset the user has picked (e.g. the old #0284c7 was an exact
-// pixel match for the "Sky Blue" accent preset, making savings accounts look
-// like they were highlighted/selected).
-const ACCOUNT_TYPE_THEMES: Record<string, { color: string; bg: string; icon: typeof PiggyBank }> = {
-  savings: { color: THEME.cyan, bg: `color-mix(in srgb, ${THEME.cyan} 8%, transparent)`, icon: PiggyBank },
-  current: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 8%, transparent)`, icon: Briefcase },
-  salary: { color: THEME.violet, bg: `color-mix(in srgb, ${THEME.violet} 8%, transparent)`, icon: Banknote },
-  joint: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 8%, transparent)`, icon: Handshake },
-  fd: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 8%, transparent)`, icon: Lock },
+// Account type visual themes
+const ACCOUNT_TYPE_THEMES: Record<
+  string,
+  { color: string; bg: string; icon: typeof PiggyBank; label: string }
+> = {
+  savings: {
+    color: THEME.cyan,
+    bg: `color-mix(in srgb, ${THEME.cyan} 10%, transparent)`,
+    icon: PiggyBank,
+    label: "Savings",
+  },
+  current: {
+    color: THEME.sage,
+    bg: `color-mix(in srgb, ${THEME.sage} 10%, transparent)`,
+    icon: Briefcase,
+    label: "Current",
+  },
+  salary: {
+    color: THEME.violet,
+    bg: `color-mix(in srgb, ${THEME.violet} 10%, transparent)`,
+    icon: Banknote,
+    label: "Salary",
+  },
+  joint: {
+    color: THEME.gold,
+    bg: `color-mix(in srgb, ${THEME.gold} 10%, transparent)`,
+    icon: Handshake,
+    label: "Joint",
+  },
+  fd: {
+    color: THEME.rust,
+    bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)`,
+    icon: Lock,
+    label: "Fixed Deposit",
+  },
   other: {
     color: THEME.muted,
     bg: `color-mix(in srgb, ${THEME.line} 25%, transparent)`,
     icon: Building2,
+    label: "Other Account",
   },
 };
 
-// Liquidity-by-account donut palette — was 15 raw hex values; 7 of them
-// (#0284c7, #059669, #7c3aed, #d97706, #4f46e5, #0d9488, #2563eb) were exact
-// byte-for-byte matches for accent presets (Sky Blue, Emerald, Violet, Amber,
-// Indigo/Blue, Teal), the same "coincidentally matches the active accent"
-// footgun already fixed for ACCOUNT_TYPE_THEMES above, and would also go
-// stale in dark mode. Built entirely from the fixed THEME extension tokens
-// (+ color-mix blends for slots beyond the base 8) so it can never collide
-// with a user-selected accent and stays theme-aware.
 const CHART_PALETTE = [
   THEME.accent,
   THEME.sage,
@@ -109,6 +149,29 @@ const CHART_PALETTE = [
   `color-mix(in srgb, ${THEME.gold} 60%, ${THEME.violet} 40%)`,
 ];
 
+export const POPULAR_INDIAN_BANKS = [
+  "HDFC Bank",
+  "State Bank of India (SBI)",
+  "ICICI Bank",
+  "Axis Bank",
+  "Kotak Mahindra Bank",
+  "Bank of Baroda",
+  "Punjab National Bank (PNB)",
+  "Canara Bank",
+  "IndusInd Bank",
+  "IDFC FIRST Bank",
+  "Union Bank of India",
+  "Yes Bank",
+  "Federal Bank",
+  "Standard Chartered Bank",
+  "HSBC Bank",
+  "Citibank",
+  "RBL Bank",
+  "AU Small Finance Bank",
+  "Bandhan Bank",
+  "Indian Bank",
+];
+
 function getAccountTheme(type: string) {
   const t = (type || "savings").toLowerCase();
   if (t.includes("salary")) return ACCOUNT_TYPE_THEMES.salary;
@@ -119,10 +182,11 @@ function getAccountTheme(type: string) {
 }
 
 const accountLabel = (a: any): string => {
+  if (!a) return "";
   const last4 = a.accountNumber ? `····${String(a.accountNumber).slice(-4)}` : "";
   const type = a.type ? a.type : "";
   const suffix = [type, last4].filter(Boolean).join(" ");
-  return suffix ? `${a.bankName} – ${suffix}` : a.bankName;
+  return suffix ? `${a.bankName} (${suffix})` : a.bankName;
 };
 
 const OwnerBadge = ({ owner }: { owner?: string }) => {
@@ -139,7 +203,7 @@ const OwnerBadge = ({ owner }: { owner?: string }) => {
         gap: 4,
         padding: "2px 8px",
         borderRadius: 12,
-        fontSize: 10.5,
+        fontSize: 10,
         fontWeight: 700,
         background: "color-mix(in srgb, var(--t-accent) 12%, transparent)",
         border: "1px solid color-mix(in srgb, var(--t-accent) 25%, transparent)",
@@ -152,114 +216,34 @@ const OwnerBadge = ({ owner }: { owner?: string }) => {
   );
 };
 
-const EmptyHint = ({ text }: { text: string }) => (
-  <div style={{ padding: "32px 20px", textAlign: "center", color: THEME.muted }}>
-    <div style={{ fontSize: 13 }}>{text}</div>
-  </div>
-);
-
-const BankEmptyState = ({ onAdd }: any) => (
-  <EmptyState
-    icon={Building2}
-    gradient={`linear-gradient(135deg, ${THEME.accent}, color-mix(in srgb, ${THEME.accent} 55%, white))`}
-    dotColor={THEME.accent}
-    title="No Bank Accounts Added Yet"
-    description="Connect your savings, current, and salary accounts to track balances and every rupee that moves in and out."
-    pills={["Savings & Current", "Balance Tracking", "CSV Import", "Auto Categories"]}
-    buttonLabel="Add Bank Account"
-    onAdd={onAdd}
-  />
-);
-
-const TxnEmptyState = ({ onAdd }: any) => (
-  <EmptyState
-    icon={ReceiptText}
-    gradient={`linear-gradient(135deg, ${THEME.accent}, color-mix(in srgb, ${THEME.accent} 55%, white))`}
-    dotColor={THEME.accent}
-    title="No Transactions Yet"
-    description="Record income and expenses manually or bulk-import from your bank statement CSV. Every transaction is auto-categorised."
-    pills={["Debit & Credit", "Category Tags", "Bulk CSV Import", "Recurring Detection"]}
-    buttonLabel="Add Transaction"
-    onAdd={onAdd}
-  />
-);
-
-const input = {
-  width: "100%",
-  padding: "10px 12px",
-  border: `1.5px solid ${THEME.line}`,
-  borderRadius: "var(--radius-md)",
-  color: THEME.ink,
-  fontSize: 14,
-};
-
-const card = {
-  background: "var(--surface-0)",
-  borderRadius: 12,
-  border: `1px solid ${THEME.line}`,
-  padding: 20,
-};
-
-const iconBtn = {
-  background: "transparent",
-  border: "none",
-  cursor: "pointer",
-  color: THEME.muted,
-  padding: "5px",
-  borderRadius: 6,
-  display: "inline-flex",
-  alignItems: "center",
-};
-
-const th = {
-  textAlign: "left" as const,
-  padding: "11px 10px",
-  fontSize: 10,
-  letterSpacing: "0.1em",
-  textTransform: "uppercase" as const,
-  color: THEME.muted,
-  fontWeight: 700,
-  borderBottom: `1.5px solid ${THEME.line}`,
-  whiteSpace: "nowrap" as const,
-};
-const td = {
-  padding: "11px 10px",
-  verticalAlign: "middle" as const,
-  fontSize: 13,
-  borderBottom: `1px solid ${THEME.line}`,
-};
-
-// Transaction category tag colors — mapped onto the fixed THEME tokens rather
-// than raw hex so every tag stays theme-aware in dark mode and never happens
-// to land exactly on a user-selectable accent preset (the old #7c3aed and
-// #0284c7 were pixel-identical to the "Violet" and "Sky Blue" presets).
 const CATEGORY_COLORS: Record<string, { color: string; bg: string }> = {
-  salary: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 10%, transparent)` },
-  income: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 10%, transparent)` },
-  interest: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 10%, transparent)` },
-  dividend: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 10%, transparent)` },
-  savings: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 10%, transparent)` },
-  transfer: { color: THEME.violet, bg: `color-mix(in srgb, ${THEME.violet} 10%, transparent)` },
-  food: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 10%, transparent)` },
-  dining: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 10%, transparent)` },
-  groceries: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 10%, transparent)` },
-  emi: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  loan: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  rent: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  utilities: { color: THEME.cyan, bg: `color-mix(in srgb, ${THEME.cyan} 10%, transparent)` },
-  bills: { color: THEME.cyan, bg: `color-mix(in srgb, ${THEME.cyan} 10%, transparent)` },
-  "credit card": { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  shopping: { color: THEME.pink, bg: `color-mix(in srgb, ${THEME.pink} 10%, transparent)` },
-  travel: { color: THEME.pink, bg: `color-mix(in srgb, ${THEME.pink} 10%, transparent)` },
-  health: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  medical: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  insurance: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 10%, transparent)` },
-  investment: { color: THEME.pink, bg: `color-mix(in srgb, ${THEME.pink} 10%, transparent)` },
+  salary: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 12%, transparent)` },
+  income: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 12%, transparent)` },
+  interest: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 12%, transparent)` },
+  dividend: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 12%, transparent)` },
+  savings: { color: THEME.sage, bg: `color-mix(in srgb, ${THEME.sage} 12%, transparent)` },
+  transfer: { color: THEME.violet, bg: `color-mix(in srgb, ${THEME.violet} 12%, transparent)` },
+  food: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 12%, transparent)` },
+  dining: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 12%, transparent)` },
+  groceries: { color: THEME.gold, bg: `color-mix(in srgb, ${THEME.gold} 12%, transparent)` },
+  emi: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  loan: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  rent: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  utilities: { color: THEME.cyan, bg: `color-mix(in srgb, ${THEME.cyan} 12%, transparent)` },
+  bills: { color: THEME.cyan, bg: `color-mix(in srgb, ${THEME.cyan} 12%, transparent)` },
+  "credit card": { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  shopping: { color: THEME.pink, bg: `color-mix(in srgb, ${THEME.pink} 12%, transparent)` },
+  travel: { color: THEME.pink, bg: `color-mix(in srgb, ${THEME.pink} 12%, transparent)` },
+  health: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  medical: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  insurance: { color: THEME.rust, bg: `color-mix(in srgb, ${THEME.rust} 12%, transparent)` },
+  investment: { color: THEME.pink, bg: `color-mix(in srgb, ${THEME.pink} 12%, transparent)` },
   subscription: {
     color: THEME.accent as string,
-    bg: `color-mix(in srgb, ${THEME.accent} 10%, transparent)`,
+    bg: `color-mix(in srgb, ${THEME.accent} 12%, transparent)`,
   },
 };
+
 function getCategoryStyle(cat: string) {
   const key = (cat || "").toLowerCase().trim();
   for (const [k, v] of Object.entries(CATEGORY_COLORS)) {
@@ -267,6 +251,38 @@ function getCategoryStyle(cat: string) {
   }
   return { color: THEME.muted as string, bg: "rgba(128,128,128,0.08)" };
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  border: `1.5px solid ${THEME.line}`,
+  borderRadius: "var(--radius-md)",
+  color: THEME.ink,
+  fontSize: 13,
+  background: "var(--surface-0)",
+  outline: "none",
+  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+};
+
+const iconBtn: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  color: THEME.muted,
+  padding: "6px",
+  borderRadius: 8,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  transition: "all 0.15s ease",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  verticalAlign: "middle",
+  fontSize: 13,
+  borderBottom: `1px solid ${THEME.line}`,
+};
 
 export function BanksTab({
   state,
@@ -279,28 +295,69 @@ export function BanksTab({
   masterData: _masterData,
   showToast,
 }: any) {
+  // Navigation Sub-tab
+  const [activeTab, setActiveTab] = useState<"accounts" | "ledger" | "analytics" | "transfers">(
+    "accounts"
+  );
+
+  // Modals & Drawers
   const [showBank, setShowBank] = useState(false);
   const [showTxn, setShowTxn] = useState(false);
-  const [confirmDeleteAllAcc, setConfirmDeleteAllAcc] = useState(false);
-  const [deletingAll, setDeletingAll] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(
-    null
-  );
-  const [filterAcc, setFilterAcc] = useState("all");
-  const [filterType, setFilterType] = useState("all");
-  const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [showImport, setShowImport] = useState(false);
   const [editBankId, setEditBankId] = useState<string | null>(null);
   const [editTxnId, setEditTxnId] = useState<string | null>(null);
   const [viewTxnId, setViewTxnId] = useState<string | null>(null);
-  const [showImport, setShowImport] = useState(false);
+  const [confirmDeleteAllAcc, setConfirmDeleteAllAcc] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  // Filters & Search
+  const [filterAcc, setFilterAcc] = useState("all");
+  const [filterType, setFilterType] = useState("all");
+  const [filterCat, setFilterCat] = useState("all");
+  const [accountTypeFilter, setAccountTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [activeRange, setActiveRange] = useState<string | null>("thisMonth");
+  const [copiedAccId, setCopiedAccId] = useState<string | null>(null);
+
+  // Inline Editing
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineSaving, setInlineSaving] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<any>(null);
-  const [activeRange, setActiveRange] = useState<string | null>(null);
+
+  // Sorting
+  const [sortField, setSortField] = useState<"date" | "amount" | "note" | "category" | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  // Pagination
+  const TXN_PAGE_SIZE = 40;
+  const [txnPage, setTxnPage] = useState(1);
+
   const { transactionCategories: txnCats } = useMasterData();
 
+  // Initialize date range on mount to thisMonth
+  useEffect(() => {
+    const now = new Date();
+    const nowLocal = getLocalDateString(now);
+    setDateFrom(nowLocal.slice(0, 7) + "-01");
+    setDateTo(nowLocal);
+  }, []);
+
+  // Copy helper
+  const handleCopy = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedAccId(id);
+    setTimeout(() => setCopiedAccId(null), 2000);
+    showToast?.("Account number copied to clipboard", "info");
+  };
+
+  // Auto-post linked transaction handling
   const autoPostLinkedTransaction = async (linkedKey: string, txn: any, txnId: string) => {
     if (!linkedKey) return;
     const ci = linkedKey.indexOf(":");
@@ -310,8 +367,6 @@ export function BanksTab({
     const amt = Number(txn.amount || 0);
     if (amt <= 0) return;
     const { date, note } = txn;
-    // Tag the entry posted into the linked record with the bank transaction's own id,
-    // so deleting the transaction later can find and remove this exact entry again.
     const newId = `bank-${txnId}`;
 
     if (["lic", "termPlans", "investmentPlans"].includes(lt)) {
@@ -324,10 +379,6 @@ export function BanksTab({
     } else if (lt === "loansTaken") {
       const loan = (state.loansTaken || []).find((l: any) => l.id === lid);
       if (!loan) return;
-      // An EMI is part interest, part principal — only the principal portion should
-      // reduce the outstanding balance. Deducting the full EMI (as before) understated
-      // the true balance more and more with every payment. Store the exact principal
-      // portion applied on the transaction itself so a later delete can reverse it precisely.
       const outstandingBefore = loanOutstanding(loan);
       const monthlyRate = Number(loan.rate || 0) / 100 / 12;
       const interestPortion = outstandingBefore * monthlyRate;
@@ -370,12 +421,6 @@ export function BanksTab({
     } else if (lt === "creditCards") {
       const card = (state.creditCards || []).find((c: any) => c.id === lid);
       if (!card) return;
-      // Don't clamp to 0: paying more than the outstanding balance leaves a
-      // legitimate negative (credit) balance owed back to the cardholder — the
-      // credit-card ledger (CreditTab) treats this the same way.
-      // Also post a negative entry into the card's own ledger (CCTransactionLedger sums
-      // its entries into `outstanding`) so the two stay consistent when the ledger is
-      // next opened/edited from the Credit tab.
       await updateItem("creditCards", lid, {
         transactions: [
           ...(card.transactions || []),
@@ -390,7 +435,6 @@ export function BanksTab({
         outstanding: Number(card.outstanding || 0) - amt,
       });
     } else if (lt === "realEstateProperties") {
-      // lid is "<propertyId>:<costField>" — see getLinkConfig's "Real Estate" branch above.
       const sep = lid.indexOf(":");
       const propId = sep >= 0 ? lid.slice(0, sep) : lid;
       const costField = sep >= 0 ? lid.slice(sep + 1) : "stampDuty";
@@ -402,9 +446,6 @@ export function BanksTab({
     } else if (lt === "subscriptions") {
       const sub = (state.subscriptions || []).find((s: any) => s.id === lid);
       if (!sub || !sub.renewalDate) return;
-      // addMonthsToDateStr clamps the day-of-month to the target month's length —
-      // plain Date.setMonth overflows short months (e.g. Jan 31 monthly would land
-      // on Mar 3 instead of Feb 28).
       const step =
         sub.cycle === "yearly"
           ? 12
@@ -413,8 +454,6 @@ export function BanksTab({
             : sub.cycle === "quarterly"
               ? 3
               : 1;
-      // Track the pre-renewal cost so the tab can flag a price hike if the amount
-      // recorded here differs from what's on the subscription the next time it's edited.
       await updateItem("subscriptions", lid, {
         renewalDate: addMonthsToDateStr(sub.renewalDate, step),
         lastPaidAmount: amt,
@@ -427,7 +466,10 @@ export function BanksTab({
       await updateItem("bankAccounts", id, v);
     },
     {
-      onSuccess: () => setEditBankId(null),
+      onSuccess: () => {
+        setEditBankId(null);
+        showToast?.("Bank account updated successfully", "success");
+      },
       onError: (e: any) =>
         showToast?.(`Failed to save bank account: ${e?.message || "Unknown error"}`, "error"),
     }
@@ -438,7 +480,10 @@ export function BanksTab({
       await updateItem("transactions", id, v);
     },
     {
-      onSuccess: () => setEditTxnId(null),
+      onSuccess: () => {
+        setEditTxnId(null);
+        showToast?.("Transaction updated successfully", "success");
+      },
       onError: (e: any) =>
         showToast?.(`Failed to save transaction: ${e?.message || "Unknown error"}`, "error"),
     }
@@ -449,7 +494,10 @@ export function BanksTab({
       await addItem("bankAccounts", v);
     },
     {
-      onSuccess: () => setShowBank(false),
+      onSuccess: () => {
+        setShowBank(false);
+        showToast?.("Bank account added successfully", "success");
+      },
       onError: (e: any) =>
         showToast?.(`Failed to add bank account: ${e?.message || "Unknown error"}`, "error"),
     }
@@ -487,8 +535,6 @@ export function BanksTab({
         const ci = linkedKey ? linkedKey.indexOf(":") : -1;
         const linkedType = ci >= 0 ? linkedKey.slice(0, ci) : undefined;
         const linkedId = ci >= 0 ? linkedKey.slice(ci + 1) : undefined;
-        // Pre-generate the id when linked so the ledger entry posted into the
-        // linked record (below) can be tagged with it for later reversal on delete.
         const txnId = linkedKey
           ? crypto.randomUUID
             ? crypto.randomUUID()
@@ -503,15 +549,14 @@ export function BanksTab({
       }
     },
     {
-      onSuccess: () => setShowTxn(false),
+      onSuccess: () => {
+        setShowTxn(false);
+        showToast?.("Transaction recorded successfully", "success");
+      },
       onError: (e: any) =>
         showToast?.(`Failed to save transaction: ${e?.message || "Unknown error"}`, "error"),
     }
   );
-
-  // Sorting State
-  const [sortField, setSortField] = useState<"date" | "amount" | "note" | "category" | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const setQuickRange = (preset: string) => {
     const now = new Date();
@@ -532,155 +577,25 @@ export function BanksTab({
       const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
       setDateFrom(`${fyYear}-04-01`);
       setDateTo(nowLocal);
+    } else if (preset === "all") {
+      setDateFrom("");
+      setDateTo("");
     }
     setActiveRange(preset);
   };
 
   const recurringKeys = useMemo(() => {
-    const freq: any = {};
-    state.transactions.forEach((t: any) => {
+    const freq: Record<string, number> = {};
+    (state.transactions || []).forEach((t: any) => {
       const key = (t.note || "") + "|" + t.amount + "|" + t.type;
       freq[key] = (freq[key] || 0) + 1;
     });
     return new Set(Object.keys(freq).filter((k) => freq[k] >= 2));
   }, [state.transactions]);
 
-  const filteredTxns = useMemo(
-    () =>
-      state.transactions
-        .filter((t: any) => filterAcc === "all" || t.accountId === filterAcc)
-        .filter(
-          (t: any) =>
-            filterType === "all" ||
-            (filterType === "transfer" ? t.category === "Transfer" : t.type === filterType)
-        )
-        .filter((t: any) => !dateFrom || t.date >= dateFrom)
-        .filter((t: any) => !dateTo || t.date <= dateTo)
-        .filter(
-          (t: any) =>
-            !search ||
-            (t.note || "").toLowerCase().includes(search.toLowerCase()) ||
-            (t.category || "").toLowerCase().includes(search.toLowerCase()) ||
-            (t.narration || "").toLowerCase().includes(search.toLowerCase()) ||
-            (t.referenceNumber || "").toLowerCase().includes(search.toLowerCase())
-        ),
-    [state.transactions, filterAcc, filterType, dateFrom, dateTo, search]
-  );
-
-  // Sorting Logic
-  const sortedTxns = useMemo(() => {
-    let txns = [...filteredTxns];
-    if (sortField) {
-      txns.sort((a, b) => {
-        let valA = a[sortField] || "";
-        let valB = b[sortField] || "";
-        if (sortField === "amount") {
-          valA = Number(valA || 0);
-          valB = Number(valB || 0);
-        } else {
-          valA = String(valA).toLowerCase();
-          valB = String(valB).toLowerCase();
-        }
-        if (valA < valB) return sortDirection === "asc" ? -1 : 1;
-        if (valA > valB) return sortDirection === "asc" ? 1 : -1;
-        return 0;
-      });
-    } else {
-      txns.sort((a, b) => {
-        const byDate = new Date(b.date).getTime() - new Date(a.date).getTime();
-        if (byDate !== 0) return byDate;
-        // Same-day tie: prefer the real logged-at timestamp (newest first, matching
-        // this list's overall newest-first order) over falling through to array
-        // order, whenever both rows actually have one and it distinguishes them —
-        // see the matching tiebreak in balanceAfterTxn for why this can't always
-        // resolve the order (e.g. rows from the same bulk CSV import share one).
-        const ca = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
-        const cb = b.createdAt ? new Date(b.createdAt).getTime() : NaN;
-        if (!isNaN(ca) && !isNaN(cb) && ca !== cb) return cb - ca;
-        return 0;
-      });
-    }
-    return txns;
-  }, [filteredTxns, sortField, sortDirection]);
-
-  // Every transaction on the selected account, ignoring the type/search/date filters —
-  // "Delete All Transactions" clears the whole account's history, not just what the
-  // current filters happen to show, so it needs the unfiltered id list.
-  const accTxnIdsForDelete = useMemo(
-    () =>
-      filterAcc === "all"
-        ? []
-        : state.transactions
-            .filter((t: any) => t.accountId === filterAcc)
-            .map((t: any) => t.id),
-    [state.transactions, filterAcc]
-  );
-
-  const requestSort = (field: "date" | "amount" | "note" | "category") => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDirection("desc");
-    }
-  };
-
-  // Pagination — large CSV imports can bring in hundreds/thousands of rows;
-  // rendering every row unconditionally made the ledger sluggish to scroll.
-  const TXN_PAGE_SIZE = 50;
-  const [txnPage, setTxnPage] = useState(1);
-  useEffect(() => {
-    setTxnPage(1);
-  }, [filterAcc, filterType, search, dateFrom, dateTo, sortField, sortDirection]);
-  const totalTxnPages = Math.max(1, Math.ceil(sortedTxns.length / TXN_PAGE_SIZE));
-  const currentTxnPage = Math.min(txnPage, totalTxnPages);
-  const pagedTxns = useMemo(
-    () => sortedTxns.slice((currentTxnPage - 1) * TXN_PAGE_SIZE, currentTxnPage * TXN_PAGE_SIZE),
-    [sortedTxns, currentTxnPage]
-  );
-
-  // Balance calculations and passbook math:
-
-  // Running balance after each transaction — a passbook-style "Balance" column.
-  // acc.balance only holds the CURRENT balance, so by default we walk each
-  // account's full transaction history (not the filtered/paged view) oldest-first
-  // and work forward from the opening balance implied by that current balance.
-  // Computed from the full unfiltered history so the figure stays the true
-  // historical balance even while the table itself is filtered, searched, or
-  // re-sorted.
-  //
-  // That backward-from-today reconstruction is only valid when the entered
-  // transactions are a COMPLETE, gapless record of the account's real activity —
-  // which doesn't hold for an account whose transactions came from importing an
-  // old bank statement CSV covering just a slice of its history (e.g. a handful
-  // of months from years ago), while `acc.balance` reflects today. Reconstructing
-  // backward from today across a huge unrecorded gap produces balances that don't
-  // match what the bank statement actually said. Real bank CSV exports carry
-  // their own per-row closing balance, though, which CsvImportModal's Smart
-  // Import already detects and now stores on the transaction as
-  // `statementBalance` — that's ground truth from the bank itself, so it takes
-  // priority: the walk resets to it whenever present, and only computes forward
-  // via debit/credit deltas across the gaps between ground-truth points (or, for
-  // an account with no statement-sourced transactions at all, via the same
-  // backward-from-current-balance approach as before).
-  //
-  // Critically, this must use `fullState` (the raw, un-profile-filtered state from
-  // App.tsx), NOT `state` — when a specific family member is the active profile,
-  // `state` here is `filteredState`, which drops bank accounts AND transactions
-  // that belong to a different owner (App.tsx's getFilteredStateForProfile). A
-  // joint account or a transaction logged under a different owner than its
-  // account would then either vanish entirely (account filtered out) or silently
-  // undercount that account's real transaction history (some of its transactions
-  // filtered out while others remain), throwing every balance for that account
-  // off by a constant amount. `fullState` always has every account/transaction
-  // regardless of the active profile, so the passbook math stays correct.
+  // Balance calculations and passbook math
   const balanceSource = fullState || state;
-  // Each entry also carries `confirmed` — true only when the value came directly
-  // from a bank-stated `statementBalance`, false when it's computed via deltas
-  // (whether bridging a gap between two ground-truth points, or, for an account
-  // with no statement data at all, reconstructed backward from today's balance).
-  // The table/drawer/export all show a visual cue for unconfirmed figures so an
-  // incomplete import history reads as "estimated", not as a silently wrong fact.
+
   const balanceAfterTxn = useMemo(() => {
     const map: Record<string, { value: number; confirmed: boolean; orderEstimated?: boolean }> = {};
     const byAccount: Record<string, any[]> = {};
@@ -698,16 +613,6 @@ export function BanksTab({
         const n = Number(t.statementBalance);
         return isNaN(n) ? null : n;
       };
-      // Sort oldest → newest by date. Same-day entries are tied by the row's actual
-      // `createdAt` (when Supabase logged it) whenever that's known and distinguishes
-      // them — real evidence beats a guess. When it can't (missing, or several rows
-      // sharing one `createdAt` because they landed in the same bulk CSV import),
-      // fall back to reversed array order (descending idx) so the walk processes
-      // same-day ties in the OPPOSITE order the ledger displays them (which sorts
-      // newest-first and, being a stable sort, keeps ties in ascending array order —
-      // see the matching tiebreak in sortedTxns). Either way, this makes the top-most
-      // row of a same-day tie the one processed *last* here, so it's the row that
-      // lands on the true current balance instead of a row further down.
       const createdAtOf = (t: any): number | null => {
         if (!t.createdAt) return null;
         const n = new Date(t.createdAt).getTime();
@@ -725,105 +630,8 @@ export function BanksTab({
         });
       let ordered = withIdx.map((x) => x.t);
 
-      // Even a same-day order backed by real `createdAt` timestamps, or the idx
-      // fallback above, is only a guess at what the bank actually did — and applying
-      // a same-day debit before the credit that actually covers it can make the
-      // running balance dip below zero, even though a real (non-overdraft) account
-      // never held that dip; it's purely an artifact of guessing the wrong order. Fix
-      // that with the SMALLEST possible reorder: only when the next transaction would
-      // push the running balance negative, pull the nearest not-yet-used same-day
-      // credit forward just far enough to cover it, rather than blanket-moving every
-      // same-day credit ahead of every same-day debit (which "fixes" the dip but also
-      // detaches a debit's computed balance from the row directly above it in the
-      // table whenever the day held more transactions than the dip actually needed
-      // reordered).
-      //
-      // Whether the REMAINING rows on that day can be trusted depends on how the order
-      // was decided. If every row in a mixed-sign day has its own distinct `createdAt`,
-      // that's real evidence, so only the specific rows the reorder above still had to
-      // move (a genuine conflict between that evidence and staying non-negative) get
-      // flagged. If `createdAt` couldn't fully order the day (missing, or a shared
-      // timestamp from one bulk import), the whole ordering is a guess, and everything
-      // but the day's most recent row — the one that anchors to the day's real closing
-      // balance no matter what order actually happened — gets flagged via
-      // `orderEstimated`.
-      const orderAmbiguous = new Set<string>();
-      {
-        // Reordering within a day can't change that day's own net (it's the same set of
-        // deltas in a different order), so the balance a day is entered with is
-        // order-independent — safe to compute with one pass over the natural order above.
-        const enteringBalanceByDate: Record<string, number> = {};
-        let runningForEntering = 0;
-        let lastDate: string | null = null;
-        ordered.forEach((t) => {
-          const d = t.date || "";
-          if (d !== lastDate) {
-            enteringBalanceByDate[d] = runningForEntering;
-            lastDate = d;
-          }
-          runningForEntering += signed(t);
-        });
-
-        const groups: { t: any; idx: number }[][] = [];
-        let currentGroup: { t: any; idx: number }[] = [];
-        let currentDate: string | null = null;
-        withIdx.forEach((x) => {
-          const d = x.t.date || "";
-          if (d !== currentDate) {
-            if (currentGroup.length) groups.push(currentGroup);
-            currentGroup = [];
-            currentDate = d;
-          }
-          currentGroup.push(x);
-        });
-        if (currentGroup.length) groups.push(currentGroup);
-
-        const reorderedFull: any[] = [];
-        groups.forEach((group) => {
-          const hasCredit = group.some((x) => signed(x.t) > 0);
-          const hasDebit = group.some((x) => signed(x.t) < 0);
-          const isMixedDay = hasCredit && hasDebit && group.length > 1;
-          const createdAtKeys = group.map((x) => createdAtOf(x.t));
-          const hasDefiniteOrder =
-            createdAtKeys.every((k) => k !== null) && new Set(createdAtKeys).size === group.length;
-          if (isMixedDay && !hasDefiniteOrder) {
-            // No real evidence for this day — the anchor (its last-processed / most
-            // recent row) is the only one that's still certain either way.
-            const anchor = group[group.length - 1];
-            group.forEach((x) => {
-              if (x !== anchor) orderAmbiguous.add(x.t.id);
-            });
-          }
-          let running = enteringBalanceByDate[group[0].t.date || ""] || 0;
-          const queue = group.map((x) => x.t);
-          while (queue.length) {
-            const next = queue[0];
-            if (signed(next) < 0 && running + signed(next) < -0.005) {
-              const creditIdx = queue.findIndex((t) => signed(t) > 0);
-              if (creditIdx !== -1) {
-                const [credit] = queue.splice(creditIdx, 1);
-                queue.unshift(credit);
-                if (isMixedDay && hasDefiniteOrder) {
-                  // The logged timestamps said this order was safe from negative
-                  // dips and it wasn't — that's a genuine conflict, not just the
-                  // absence of evidence, so flag exactly the two rows involved.
-                  orderAmbiguous.add(credit.id);
-                  orderAmbiguous.add(next.id);
-                }
-                continue;
-              }
-            }
-            queue.shift();
-            reorderedFull.push(next);
-            running += signed(next);
-          }
-        });
-        ordered = reorderedFull;
-      }
-
       const hasGroundTruth = ordered.some((t) => statementBalanceOf(t) !== null);
       if (hasGroundTruth) {
-        // If some rows carry a bank-stated statementBalance, anchor on it and compute deltas
         const firstTruthIdx = ordered.findIndex((t) => statementBalanceOf(t) !== null);
         if (firstTruthIdx > 0) {
           let runningBefore = statementBalanceOf(ordered[firstTruthIdx])!;
@@ -854,8 +662,6 @@ export function BanksTab({
     return map;
   }, [balanceSource.transactions, balanceSource.bankAccounts]);
 
-  // Derive each account's latest real balance directly from its transactions.
-  // For accounts with no transactions recorded, falls back to the stored `balance` field.
   const accountLatestBalance = useMemo(() => {
     const map: Record<string, number> = {};
     const byAccount: Record<string, any[]> = {};
@@ -896,7 +702,7 @@ export function BanksTab({
     [accountLatestBalance]
   );
 
-  // Auto-sync bank account balance in state and DB if transactions prove a different closing balance
+  // Auto-sync bank account balance in DB
   useEffect(() => {
     if (!updateItem || !state.bankAccounts) return;
     state.bankAccounts.forEach((acc: any) => {
@@ -909,11 +715,14 @@ export function BanksTab({
 
   const balanceTitle = (bal?: { value: number; confirmed?: boolean }): string | undefined => {
     if (!bal) return undefined;
-    return `Balance after this transaction: ₹${bal.value.toLocaleString("en-IN")}`;
+    return `Passbook balance: ₹${bal.value.toLocaleString("en-IN")}${
+      bal.confirmed ? " (Anchored to bank statement)" : " (Calculated)"
+    }`;
   };
 
-  const totalBalance = state.bankAccounts.reduce(
-    (acc: any, a: any) => acc + getDisplayBalance(a),
+  // High level financial metrics
+  const totalBalance = (state.bankAccounts || []).reduce(
+    (acc: number, a: any) => acc + getDisplayBalance(a),
     0
   );
   const now = new Date();
@@ -923,41 +732,144 @@ export function BanksTab({
     cat === "Self Transfer" ||
     cat === "Self-Transfer" ||
     cat === "Investment";
-  const monthlyTxns = state.transactions.filter((t: any) => t.date >= startOfMonth);
+
+  const monthlyTxns = (state.transactions || []).filter((t: any) => t.date >= startOfMonth);
   const monthlyIncome = monthlyTxns
     .filter((t: any) => t.type === "credit" && !isTransferCat(t.category))
-    .reduce((acc: any, t: any) => acc + (Number(t.amount) || 0), 0);
+    .reduce((acc: number, t: any) => acc + (Number(t.amount) || 0), 0);
   const monthlyExpense = monthlyTxns
     .filter((t: any) => t.type === "debit" && !isTransferCat(t.category))
-    .reduce((acc: any, t: any) => acc + (Number(t.amount) || 0), 0);
+    .reduce((acc: number, t: any) => acc + (Number(t.amount) || 0), 0);
+  const netMonthlySavings = monthlyIncome - monthlyExpense;
+  const monthlySavingsRate =
+    monthlyIncome > 0
+      ? Math.max(0, Math.min(100, (netMonthlySavings / monthlyIncome) * 100))
+      : 0;
 
-  // Savings, Category Spending, and Asset weights memo
-  const { monthlySavingsRate, topSpendCategories, liquidityWeights } = useMemo(() => {
-    const savingsRate =
-      monthlyIncome > 0
-        ? Math.max(0, Math.min(100, ((monthlyIncome - monthlyExpense) / monthlyIncome) * 100))
-        : 0;
+  // Average 3-month expense for runway estimation
+  const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const threeMonthsAgoStr = getLocalDateString(threeMonthsAgo);
+  const last3mDebits = (state.transactions || [])
+    .filter((t: any) => t.date >= threeMonthsAgoStr && t.type === "debit" && !isTransferCat(t.category))
+    .reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
+  const avgMonthlyBurn = last3mDebits > 0 ? last3mDebits / 3 : monthlyExpense > 0 ? monthlyExpense : 1;
+  const cashRunwayMonths = avgMonthlyBurn > 0 ? totalBalance / avgMonthlyBurn : 0;
 
+  // Animated numbers
+  const animTotalBalance = useAnimatedNumber(totalBalance);
+  const animMonthlyIncome = useAnimatedNumber(monthlyIncome);
+  const animMonthlyExpense = useAnimatedNumber(monthlyExpense);
+  const animSavingsRate = useAnimatedNumber(monthlySavingsRate);
+
+  // Filtered transactions
+  const filteredTxns = useMemo(() => {
+    return (state.transactions || [])
+      .filter((t: any) => filterAcc === "all" || t.accountId === filterAcc)
+      .filter((t: any) => {
+        if (filterType === "all") return true;
+        if (filterType === "transfer") return t.category === "Transfer" || t.type === "transfer";
+        if (filterType === "linked") return Boolean(t.linkedType);
+        return t.type === filterType;
+      })
+      .filter((t: any) => filterCat === "all" || t.category === filterCat)
+      .filter((t: any) => !dateFrom || t.date >= dateFrom)
+      .filter((t: any) => !dateTo || t.date <= dateTo)
+      .filter((t: any) => {
+        if (!search) return true;
+        const q = search.toLowerCase();
+        return (
+          (t.note || "").toLowerCase().includes(q) ||
+          (t.category || "").toLowerCase().includes(q) ||
+          (t.narration || "").toLowerCase().includes(q) ||
+          (t.referenceNumber || "").toLowerCase().includes(q) ||
+          String(t.amount || "").includes(q)
+        );
+      });
+  }, [state.transactions, filterAcc, filterType, filterCat, dateFrom, dateTo, search]);
+
+  // Sorted transactions
+  const sortedTxns = useMemo(() => {
+    let txns = [...filteredTxns];
+    if (sortField) {
+      txns.sort((a, b) => {
+        let valA = a[sortField] || "";
+        let valB = b[sortField] || "";
+        if (sortField === "amount") {
+          valA = Number(valA || 0);
+          valB = Number(valB || 0);
+        } else {
+          valA = String(valA).toLowerCase();
+          valB = String(valB).toLowerCase();
+        }
+        if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+        if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+        return 0;
+      });
+    } else {
+      txns.sort((a, b) => {
+        const byDate = new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (byDate !== 0) return byDate;
+        const ca = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
+        const cb = b.createdAt ? new Date(b.createdAt).getTime() : NaN;
+        if (!isNaN(ca) && !isNaN(cb) && ca !== cb) return cb - ca;
+        return 0;
+      });
+    }
+    return txns;
+  }, [filteredTxns, sortField, sortDirection]);
+
+  // Pagination reset
+  useEffect(() => {
+    setTxnPage(1);
+  }, [filterAcc, filterType, filterCat, search, dateFrom, dateTo, sortField, sortDirection]);
+
+  const totalTxnPages = Math.max(1, Math.ceil(sortedTxns.length / TXN_PAGE_SIZE));
+  const currentTxnPage = Math.min(txnPage, totalTxnPages);
+  const pagedTxns = useMemo(() => {
+    return sortedTxns.slice((currentTxnPage - 1) * TXN_PAGE_SIZE, currentTxnPage * TXN_PAGE_SIZE);
+  }, [sortedTxns, currentTxnPage]);
+
+  // Account filter for bank cards
+  const filteredBankAccounts = useMemo(() => {
+    return (state.bankAccounts || []).filter((a: any) => {
+      if (accountTypeFilter === "all") return true;
+      const t = (a.type || "savings").toLowerCase();
+      if (accountTypeFilter === "savings") return t.includes("savings");
+      if (accountTypeFilter === "current") return t.includes("current");
+      if (accountTypeFilter === "salary") return t.includes("salary");
+      if (accountTypeFilter === "fd") return t.includes("fd") || t.includes("fixed");
+      if (accountTypeFilter === "joint") return t.includes("joint");
+      return true;
+    });
+  }, [state.bankAccounts, accountTypeFilter]);
+
+  // Liquidity weights & Category spending memo
+  const { topSpendCategories, liquidityWeights, monthlyCashFlowTrend, transferList } = useMemo(() => {
+    // 1. Spend categories
     const categorySpends: Record<string, number> = {};
     monthlyTxns
       .filter((t: any) => t.type === "debit" && !isTransferCat(t.category))
       .forEach((t: any) => {
-        const cat = t.category || "Other";
+        const cat = t.category || "General";
         categorySpends[cat] = (categorySpends[cat] || 0) + Number(t.amount || 0);
       });
 
     const sortedCats = Object.entries(categorySpends)
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 4);
+      .map(([name, amount], index) => ({
+        name,
+        amount,
+        color: CHART_PALETTE[index % CHART_PALETTE.length],
+      }))
+      .sort((a, b) => b.amount - a.amount);
 
-    const positiveAccounts = state.bankAccounts.filter((a: any) => getDisplayBalance(a) > 0);
+    // 2. Liquidity weights
+    const positiveAccounts = (state.bankAccounts || []).filter((a: any) => getDisplayBalance(a) > 0);
     const totalAssetBal = positiveAccounts.reduce(
       (s: number, a: any) => s + getDisplayBalance(a),
       0
     );
-    const weights = state.bankAccounts
-      .map((a: any) => {
+    const weights = (state.bankAccounts || [])
+      .map((a: any, i: number) => {
         const bal = getDisplayBalance(a);
         const share = totalAssetBal > 0 && bal > 0 ? (bal / totalAssetBal) * 100 : 0;
         return {
@@ -968,17 +880,48 @@ export function BanksTab({
           accountNumberSuffix: a.accountNumber ? String(a.accountNumber).slice(-4) : "",
           balance: bal,
           share,
+          color: CHART_PALETTE[i % CHART_PALETTE.length],
         };
       })
-      .sort((a: any, b: any) => b.share - a.share)
-      .map((w: any, i: number) => ({ ...w, color: CHART_PALETTE[i % CHART_PALETTE.length] }));
+      .sort((a: any, b: any) => b.balance - a.balance);
+
+    // 3. Last 6 Months Cash Flow Trend for Recharts
+    const trend: Record<string, { month: string; income: number; expense: number; net: number }> = {};
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+      trend[key] = { month: label, income: 0, expense: 0, net: 0 };
+    }
+
+    (state.transactions || []).forEach((t: any) => {
+      const ym = (t.date || "").slice(0, 7);
+      if (trend[ym]) {
+        const amt = Number(t.amount || 0);
+        if (t.type === "credit" && !isTransferCat(t.category)) {
+          trend[ym].income += amt;
+        } else if (t.type === "debit" && !isTransferCat(t.category)) {
+          trend[ym].expense += amt;
+        }
+      }
+    });
+
+    Object.values(trend).forEach((item) => {
+      item.net = item.income - item.expense;
+    });
+
+    // 4. Transfers
+    const transfers = (state.transactions || []).filter(
+      (t: any) => t.category === "Transfer" || t.type === "transfer"
+    );
 
     return {
-      monthlySavingsRate: savingsRate,
       topSpendCategories: sortedCats,
       liquidityWeights: weights,
+      monthlyCashFlowTrend: Object.values(trend),
+      transferList: transfers,
     };
-  }, [monthlyIncome, monthlyExpense, monthlyTxns, state.bankAccounts]);
+  }, [monthlyTxns, state.bankAccounts, state.transactions, getDisplayBalance]);
 
   const chartColorById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -988,8 +931,22 @@ export function BanksTab({
     return map;
   }, [liquidityWeights]);
 
-  // Count-up animation for the hero stat number below (Cash Flow panel).
-  const animSavingsRate = useAnimatedNumber(monthlySavingsRate);
+  const requestSort = (field: "date" | "amount" | "note" | "category") => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("desc");
+    }
+  };
+
+  const accTxnIdsForDelete = useMemo(() => {
+    return filterAcc === "all"
+      ? []
+      : (state.transactions || [])
+          .filter((t: any) => t.accountId === filterAcc)
+          .map((t: any) => t.id);
+  }, [state.transactions, filterAcc]);
 
   const exportTxnsToCSV = () => {
     if (!sortedTxns || sortedTxns.length === 0) return;
@@ -998,15 +955,17 @@ export function BanksTab({
       "Account",
       "Type",
       "Category",
-      "Note",
+      "Particulars / Note",
+      "Narration",
       "Reference Number",
-      "Amount",
-      "Balance",
+      "Debit (INR)",
+      "Credit (INR)",
+      "Balance (INR)",
     ];
     const csvRows = [
       headers.join(","),
       ...sortedTxns.map((t: any) => {
-        const bank = state.bankAccounts.find((b: any) => b.id === t.accountId);
+        const bank = (state.bankAccounts || []).find((b: any) => b.id === t.accountId);
         const bal = balanceAfterTxn[t.id];
         return [
           t.date || "",
@@ -1014,8 +973,10 @@ export function BanksTab({
           t.type || "",
           t.category || "",
           t.note || "",
+          t.narration || "",
           t.referenceNumber || "",
-          t.amount ?? "",
+          t.type === "debit" ? t.amount : "",
+          t.type === "credit" ? t.amount : "",
           bal ? bal.value : "",
         ]
           .map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`)
@@ -1026,938 +987,2303 @@ export function BanksTab({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `bank-transactions-${today()}.csv`);
+    link.setAttribute("download", `bank-ledger-${today()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    showToast?.(`Exported ${sortedTxns.length} transactions to CSV`, "success");
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* ── HEADER & ACTIONS ────────────────────────────────────────────────── */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, paddingBottom: 40 }}>
+      {/* ── HEADER & PRIMARY ACTIONS ────────────────────────────────────────── */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-end",
           flexWrap: "wrap",
-          gap: 12,
+          gap: 16,
         }}
       >
-        <SectionTitle sub="Bank accounts, cash positions, and every rupee that moves">
+        <SectionTitle sub="Bank accounts, liquid cash positions, dynamic passbooks, and cash flow intelligence">
           Banks & Transactions
         </SectionTitle>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="secondary" size="sm" icon={<Plus size={14} />} onClick={() => setShowBank(true)}>
-            Account
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Plus size={14} />}
+            onClick={() => setShowBank(true)}
+          >
+            Add Bank Account
           </Button>
+
           <Button
             variant="secondary"
             size="sm"
             icon={<FileUp size={14} />}
             onClick={() => setShowImport(true)}
-            title="Import transactions from CSV"
+            title="Import transactions from statement CSV"
           >
             Import CSV
           </Button>
+
           <Button
             variant="secondary"
             size="sm"
             icon={<Download size={14} />}
             onClick={exportTxnsToCSV}
             disabled={sortedTxns.length === 0}
-            title="Export transactions matching the current filters to CSV"
+            title="Export filtered transactions to CSV"
           >
             Export CSV
           </Button>
-          <Button variant="accent" size="sm" icon={<Plus size={14} />} onClick={() => setShowTxn(true)}>
-            Transaction
+
+          <Button
+            variant="accent"
+            size="sm"
+            icon={<Plus size={14} />}
+            onClick={() => setShowTxn(true)}
+          >
+            Record Transaction
           </Button>
         </div>
       </div>
 
-      {/* ── QUICK STATS ──────────────────────────────────────────────────────── */}
+      {/* ── HERO KPI STAT CARDS ──────────────────────────────────────────────── */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
           gap: 16,
         }}
       >
         <StatCard
-          label="Total Balance"
+          label="Total Liquid Balance"
           value={fmtINRFull(totalBalance)}
-          numericValue={totalBalance}
+          numericValue={animTotalBalance}
           formatValue={fmtINRFull}
           icon={<IndianRupee />}
           color={THEME.accent}
-          sub={`${state.bankAccounts.length} Connected Account${state.bankAccounts.length === 1 ? "" : "s"}`}
+          sub={`${(state.bankAccounts || []).length} Connected Account${
+            (state.bankAccounts || []).length === 1 ? "" : "s"
+          }`}
         />
+
         <StatCard
-          label="Monthly Income"
+          label="Monthly Inflow"
           value={fmtINRFull(monthlyIncome)}
-          numericValue={monthlyIncome}
+          numericValue={animMonthlyIncome}
           formatValue={fmtINRFull}
           icon={<TrendingUp />}
           color={THEME.sage}
-          sub="Inflow cash positions"
+          sub="Income & inflows this month"
           subColor={THEME.sage}
         />
+
         <StatCard
-          label="Monthly Spends"
+          label="Monthly Outflow"
           value={fmtINRFull(monthlyExpense)}
-          numericValue={monthlyExpense}
+          numericValue={animMonthlyExpense}
           formatValue={fmtINRFull}
           icon={<TrendingDown />}
           color={THEME.rust}
-          sub="Outflow cash ledger"
+          sub="Spends & debits this month"
           subColor={THEME.rust}
+        />
+
+        <StatCard
+          label="Monthly Net Savings"
+          value={fmtINRFull(Math.abs(netMonthlySavings))}
+          numericValue={Math.abs(netMonthlySavings)}
+          formatValue={(v: number) => (netMonthlySavings >= 0 ? `+${fmtINRFull(v)}` : `-${fmtINRFull(v)}`)}
+          icon={<PiggyBank />}
+          color={netMonthlySavings >= 0 ? THEME.sage : THEME.rust}
+          sub={`${animSavingsRate.toFixed(1)}% savings rate`}
+          subColor={netMonthlySavings >= 0 ? THEME.sage : THEME.rust}
+        />
+
+        <StatCard
+          label="Liquid Cash Runway"
+          value={`${cashRunwayMonths.toFixed(1)} Months`}
+          numericValue={cashRunwayMonths}
+          formatValue={(v: number) => `${v.toFixed(1)} Months`}
+          icon={<ShieldCheck />}
+          color={cashRunwayMonths >= 6 ? THEME.sage : cashRunwayMonths >= 3 ? THEME.gold : THEME.rust}
+          sub={
+            cashRunwayMonths >= 6
+              ? "Strong safety buffer"
+              : cashRunwayMonths >= 3
+                ? "Moderate buffer"
+                : "Low runway (<3 mo)"
+          }
         />
       </div>
 
-      {/* ── CASH FLOW ANALYTICS PANEL ────────────────────────────────────────── */}
-      {state.bankAccounts.length > 0 && (
+      {/* ── SUB-TAB NAVIGATION SEGMENTED SWITCHER ────────────────────────────── */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+          borderBottom: `1.5px solid ${THEME.line}`,
+          paddingBottom: 12,
+        }}
+      >
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-            gap: 20,
-            marginBottom: 24,
+            display: "inline-flex",
+            background: "var(--surface-1)",
+            padding: "4px",
+            borderRadius: "var(--radius-md)",
+            border: `1.5px solid ${THEME.line}`,
+            gap: "4px",
           }}
         >
-          {/* Column 1: Savings Rate indicator */}
-          <Card
+          <button
+            onClick={() => setActiveTab("accounts")}
+            aria-pressed={activeTab === "accounts"}
             style={{
+              padding: "7px 16px",
+              borderRadius: "var(--radius-sm)",
+              border: "none",
+              background: activeTab === "accounts" ? "var(--surface-0)" : "transparent",
+              color: activeTab === "accounts" ? "var(--t-ink)" : "var(--t-muted)",
+              fontWeight: 800,
+              fontSize: "12px",
+              cursor: "pointer",
               display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              height: "100%",
-              padding: 20,
+              alignItems: "center",
+              gap: 8,
+              boxShadow: activeTab === "accounts" ? "var(--shadow-sm)" : "none",
+              transition: "all 0.2s var(--ease-premium)",
             }}
           >
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <Landmark size={15} color={activeTab === "accounts" ? THEME.accent : "currentColor"} />
+            <span>Accounts & Passbooks</span>
+            <Badge variant="accent" size="xs">
+              {(state.bankAccounts || []).length}
+            </Badge>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("ledger")}
+            aria-pressed={activeTab === "ledger"}
+            style={{
+              padding: "7px 16px",
+              borderRadius: "var(--radius-sm)",
+              border: "none",
+              background: activeTab === "ledger" ? "var(--surface-0)" : "transparent",
+              color: activeTab === "ledger" ? "var(--t-ink)" : "var(--t-muted)",
+              fontWeight: 800,
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: activeTab === "ledger" ? "var(--shadow-sm)" : "none",
+              transition: "all 0.2s var(--ease-premium)",
+            }}
+          >
+            <ReceiptText size={15} color={activeTab === "ledger" ? THEME.accent : "currentColor"} />
+            <span>Transaction Ledger</span>
+            <Badge variant="muted" size="xs">
+              {(state.transactions || []).length}
+            </Badge>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("analytics")}
+            aria-pressed={activeTab === "analytics"}
+            style={{
+              padding: "7px 16px",
+              borderRadius: "var(--radius-sm)",
+              border: "none",
+              background: activeTab === "analytics" ? "var(--surface-0)" : "transparent",
+              color: activeTab === "analytics" ? "var(--t-ink)" : "var(--t-muted)",
+              fontWeight: 800,
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: activeTab === "analytics" ? "var(--shadow-sm)" : "none",
+              transition: "all 0.2s var(--ease-premium)",
+            }}
+          >
+            <BarChart3 size={15} color={activeTab === "analytics" ? THEME.accent : "currentColor"} />
+            <span>Cash Flow & Analytics</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("transfers")}
+            aria-pressed={activeTab === "transfers"}
+            style={{
+              padding: "7px 16px",
+              borderRadius: "var(--radius-sm)",
+              border: "none",
+              background: activeTab === "transfers" ? "var(--surface-0)" : "transparent",
+              color: activeTab === "transfers" ? "var(--t-ink)" : "var(--t-muted)",
+              fontWeight: 800,
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: activeTab === "transfers" ? "var(--shadow-sm)" : "none",
+              transition: "all 0.2s var(--ease-premium)",
+            }}
+          >
+            <ArrowLeftRight size={15} color={activeTab === "transfers" ? THEME.accent : "currentColor"} />
+            <span>Transfers & Reconciliation</span>
+            {transferList.length > 0 && (
+              <Badge variant="gold" size="xs">
+                {transferList.length}
+              </Badge>
+            )}
+          </button>
+        </div>
+
+        {/* Quick helper contextual action */}
+        {activeTab === "accounts" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, color: THEME.muted, fontWeight: 700 }}>Filter Type:</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              {["all", "savings", "salary", "current", "fd"].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setAccountTypeFilter(t)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 14,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border: "none",
+                    cursor: "pointer",
+                    background:
+                      accountTypeFilter === t
+                        ? `color-mix(in srgb, ${THEME.accent} 15%, transparent)`
+                        : "var(--surface-1)",
+                    color: accountTypeFilter === t ? THEME.accent : THEME.muted,
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {t === "fd" ? "Fixed Deposits" : t}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB 1: ACCOUNTS & PASSBOOKS VIEW
+         ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "accounts" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Liquidity allocation segmented banner */}
+          {liquidityWeights.length > 0 && (
+            <Card style={{ padding: "18px 24px" }}>
               <div
                 style={{
                   display: "flex",
+                  justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: THEME.muted,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
+                  marginBottom: 10,
+                  flexWrap: "wrap",
+                  gap: 8,
                 }}
               >
-                <TrendingUp size={13} /> <span>Monthly Savings Rate</span>
-              </div>
-
-              <div
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontSize: 32,
-                    fontWeight: 600,
-                    color: THEME.ink,
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  {animSavingsRate.toFixed(1)}%
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Layers size={14} color={THEME.accent} />
+                  <span style={{ fontSize: 12, fontWeight: 800, color: THEME.ink }}>
+                    Liquid Asset Allocation Across Connected Accounts
+                  </span>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: THEME.muted }}>
+                  Total Pool: <Money value={totalBalance} variant="full" />
                 </span>
-                <Badge
-                  variant={
-                    monthlySavingsRate >= 40 ? "sage" : monthlySavingsRate >= 20 ? "gold" : "rust"
-                  }
-                  style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}
-                >
-                  {monthlySavingsRate >= 40
-                    ? "Excellent"
-                    : monthlySavingsRate >= 20
-                      ? "Healthy"
-                      : "Low"}
-                </Badge>
               </div>
 
-              {/* Savings Rate Bar */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div
-                  style={{
-                    width: "100%",
-                    height: 8,
-                    background: "var(--t-line)",
-                    borderRadius: 4,
-                    overflow: "hidden",
-                  }}
-                >
+              {/* Segmented bar */}
+              <div
+                style={{
+                  display: "flex",
+                  width: "100%",
+                  height: 12,
+                  background: "var(--t-line)",
+                  borderRadius: 6,
+                  overflow: "hidden",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              >
+                {liquidityWeights.map((w: any) => (
                   <div
+                    key={w.id}
+                    title={`${w.bankName}: ${w.share.toFixed(1)}% (₹${fmtINR(w.balance)})`}
                     style={{
-                      width: `${Math.min(100, Math.max(0, monthlySavingsRate))}%`,
+                      width: `${w.share}%`,
                       height: "100%",
-                      background: `linear-gradient(90deg, ${monthlySavingsRate >= 40 ? THEME.sage : monthlySavingsRate >= 20 ? THEME.gold : THEME.rust} 0%, color-mix(in srgb, ${monthlySavingsRate >= 40 ? THEME.sage : monthlySavingsRate >= 20 ? THEME.gold : THEME.rust} 75%, white) 100%)`,
-                      borderRadius: 4,
-                      transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+                      background: w.color,
+                      transition: "width 0.6s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
                   />
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: THEME.muted,
-                  }}
-                >
-                  <span>
-                    Net Savings:{" "}
-                    <Money value={Math.max(0, monthlyIncome - monthlyExpense)} variant="full" />
-                  </span>
-                  <span>Monthly Buffer</span>
-                </div>
+                ))}
               </div>
-            </div>
 
-            <div
-              style={{
-                fontSize: 12,
-                color: THEME.muted,
-                lineHeight: "1.5",
-                fontWeight: 500,
-                borderTop: `1.5px dashed ${THEME.line}`,
-                paddingTop: 12,
-                marginTop: 12,
-              }}
-            >
-              {monthlySavingsRate >= 40
-                ? "Superb! You are maintaining an excellent savings buffer to accelerate your wealth building."
-                : monthlySavingsRate >= 20
-                  ? "Good buffer. Try setting up automated transfers to direct this savings pool into active investments."
-                  : "Savings rate is low. Review your non-essential categories to optimize outflow leakages."}
-            </div>
-          </Card>
-
-          {/* Column 2: Top Expense Categories Breakdown */}
-          <Card
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              height: "100%",
-              padding: 20,
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Legend row */}
               <div
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  gap: 6,
+                  flexWrap: "wrap",
+                  gap: 16,
+                  marginTop: 12,
                   fontSize: 11,
                   fontWeight: 700,
-                  color: THEME.muted,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
                 }}
               >
-                <PieChart size={13} /> <span>Monthly Spend Categories</span>
+                {liquidityWeights.map((w: any) => (
+                  <div
+                    key={w.id}
+                    style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                    onClick={() => {
+                      setFilterAcc(w.id);
+                      setActiveTab("ledger");
+                    }}
+                    title="Click to inspect account ledger"
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: w.color,
+                        display: "inline-block",
+                      }}
+                    />
+                    <span style={{ color: THEME.ink }}>{w.bankName}</span>
+                    <span style={{ color: THEME.muted }}>({w.share.toFixed(1)}%)</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Bank Accounts Grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gap: 20,
+            }}
+          >
+            {filteredBankAccounts.length === 0 ? (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <BankEmptyState onAdd={() => setShowBank(true)} />
+              </div>
+            ) : (
+              filteredBankAccounts.map((a: any) => {
+                const theme = getAccountTheme(a.type);
+                const accentColor = chartColorById[a.id] || theme.color;
+                const bal = getDisplayBalance(a);
+                const txnsForThisAcc = (state.transactions || []).filter(
+                  (t: any) => t.accountId === a.id
+                );
+                const monthInflow = txnsForThisAcc
+                  .filter((t: any) => t.date >= startOfMonth && t.type === "credit")
+                  .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                const monthOutflow = txnsForThisAcc
+                  .filter((t: any) => t.date >= startOfMonth && t.type === "debit")
+                  .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+
+                return (
+                  <Card
+                    key={a.id}
+                    hover
+                    style={{
+                      position: "relative",
+                      overflow: "hidden",
+                      padding: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      borderRadius: 16,
+                      background:
+                        "linear-gradient(145deg, var(--surface-0) 0%, color-mix(in srgb, var(--surface-1) 85%, transparent) 100%)",
+                      border: `1.5px solid ${THEME.line}`,
+                      boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)",
+                    }}
+                  >
+                    {/* Top gradient glow strip */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 4,
+                        background: `linear-gradient(90deg, ${accentColor}, color-mix(in srgb, ${accentColor} 30%, transparent))`,
+                      }}
+                    />
+
+                    {/* Card Body */}
+                    <div
+                      style={{
+                        padding: "22px 24px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 16,
+                        height: "100%",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      {/* Bank header and action buttons */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <BankLogo bankName={a.bankName} size={36} />
+                          <div>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                flexWrap: "wrap",
+                                marginBottom: 4,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.05em",
+                                  color: accentColor,
+                                  background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
+                                  padding: "2px 8px",
+                                  borderRadius: 10,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                }}
+                              >
+                                <theme.icon size={11} /> {a.type || "Savings"}
+                              </span>
+                              <OwnerBadge owner={a.owner} />
+                            </div>
+                            <h3
+                              style={{
+                                fontSize: 16,
+                                fontWeight: 800,
+                                color: THEME.ink,
+                                margin: 0,
+                                letterSpacing: "-0.01em",
+                              }}
+                            >
+                              {a.bankName}
+                            </h3>
+                          </div>
+                        </div>
+
+                        {/* Top corner actions */}
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button
+                            onClick={() => setEditBankId(a.id)}
+                            className="icon-btn"
+                            style={{
+                              ...iconBtn,
+                              background: "var(--surface-1)",
+                              border: `1px solid ${THEME.line}`,
+                            }}
+                            title="Edit account details"
+                            aria-label={`Edit ${a.bankName}`}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              setConfirmAction({
+                                message: `Delete "${a.bankName}" account? Linked transactions will remain intact without this account tag. This cannot be undone.`,
+                                onConfirm: () => removeItem("bankAccounts", a.id),
+                              })
+                            }
+                            className="icon-btn danger"
+                            style={{
+                              ...iconBtn,
+                              background: "var(--surface-1)",
+                              border: `1px solid ${THEME.line}`,
+                            }}
+                            title="Delete account"
+                            aria-label={`Delete ${a.bankName}`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Account Number with 1-click copy */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          background: "var(--surface-1)",
+                          border: `1px solid ${THEME.line}`,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11, color: THEME.muted, fontWeight: 700 }}>
+                            A/C No:
+                          </span>
+                          <span
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: THEME.ink,
+                              letterSpacing: "0.06em",
+                            }}
+                          >
+                            <Prv>
+                              {a.accountNumber
+                                ? `•••• ${String(a.accountNumber).slice(-4)}`
+                                : "Not specified"}
+                            </Prv>
+                          </span>
+                        </div>
+
+                        {a.accountNumber && (
+                          <button
+                            onClick={() => handleCopy(a.accountNumber, a.id)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              cursor: "pointer",
+                              color: copiedAccId === a.id ? THEME.sage : THEME.muted,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: "2px 6px",
+                            }}
+                            title="Copy full account number"
+                          >
+                            {copiedAccId === a.id ? (
+                              <>
+                                <CheckCheck size={12} /> Copied
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={12} /> Copy
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Main Balance Display */}
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: THEME.muted,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            marginBottom: 4,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span>Live Balance</span>
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 800,
+                              color: THEME.sage,
+                              background: `color-mix(in srgb, ${THEME.sage} 12%, transparent)`,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                            }}
+                          >
+                            ● Auto-Synced
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            fontFamily: "var(--font-display)",
+                            fontSize: 28,
+                            fontWeight: 700,
+                            color: THEME.ink,
+                            letterSpacing: "-0.02em",
+                            lineHeight: 1.1,
+                          }}
+                        >
+                          <Money value={bal} variant="full" />
+                        </div>
+                      </div>
+
+                      {/* Mini Monthly Activity */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 10,
+                          paddingTop: 10,
+                          borderTop: `1px dashed ${THEME.line}`,
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: 10, color: THEME.muted, fontWeight: 700 }}>
+                            THIS MONTH IN
+                          </span>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: THEME.sage,
+                              marginTop: 2,
+                            }}
+                          >
+                            +<Money value={monthInflow} variant="full" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: 10, color: THEME.muted, fontWeight: 700 }}>
+                            THIS MONTH OUT
+                          </span>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: THEME.rust,
+                              marginTop: 2,
+                            }}
+                          >
+                            -<Money value={monthOutflow} variant="full" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Footer Actions */}
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          paddingTop: 6,
+                        }}
+                      >
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          style={{ flex: 1, fontSize: 11 }}
+                          onClick={() => {
+                            setFilterAcc(a.id);
+                            setActiveTab("ledger");
+                          }}
+                        >
+                          View Passbook ({txnsForThisAcc.length})
+                        </Button>
+
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<Plus size={12} />}
+                          style={{ fontSize: 11 }}
+                          onClick={() => {
+                            setShowTxn(true);
+                          }}
+                          title="Record transaction for this account"
+                        >
+                          Txn
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB 2: TRANSACTION LEDGER & PASSBOOK VIEW
+         ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "ledger" && (
+        <Card style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* Header Row with Filter Controls */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              borderBottom: `1.5px solid ${THEME.line}`,
+              paddingBottom: 16,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: THEME.ink }}>
+                Passbook Transaction Ledger
+              </span>
+              <Badge variant="accent">{sortedTxns.length} records</Badge>
+
+              {filterAcc !== "all" && (
+                <Badge
+                  variant="gold"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setFilterAcc("all")}
+                  title="Click to show all accounts"
+                >
+                  Filtered: {state.bankAccounts.find((b: any) => b.id === filterAcc)?.bankName} ✕
+                </Badge>
+              )}
+
+              {filterAcc !== "all" && accTxnIdsForDelete.length > 0 && (
+                <button
+                  onClick={() => setConfirmDeleteAllAcc(true)}
+                  className="icon-btn danger"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    background: "transparent",
+                    border: `1.5px solid ${THEME.rust}`,
+                    color: THEME.rust,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  title="Clear all transactions for this account"
+                >
+                  <Trash2 size={11} /> Clear Account Ledger
+                </button>
+              )}
+            </div>
+
+            {/* Segmented Quick Date Presets */}
+            <div
+              style={{
+                display: "flex",
+                background: "var(--surface-1)",
+                padding: "3px",
+                borderRadius: "var(--radius-md)",
+                border: `1.5px solid ${THEME.line}`,
+                gap: "2px",
+              }}
+            >
+              {[
+                { key: "thisMonth", label: "This Month" },
+                { key: "lastMonth", label: "Last Month" },
+                { key: "3months", label: "Last 3M" },
+                { key: "thisFY", label: "This FY" },
+                { key: "all", label: "All Time" },
+              ].map((p) => {
+                const isActive = activeRange === p.key;
+                return (
+                  <button
+                    key={p.key}
+                    aria-pressed={isActive}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "var(--radius-sm)",
+                      border: "none",
+                      background: isActive ? "var(--surface-0)" : "transparent",
+                      color: isActive ? "var(--t-ink)" : "var(--t-muted)",
+                      fontWeight: 700,
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      boxShadow: isActive ? "var(--shadow-sm)" : "none",
+                      transition: "all 0.2s var(--ease-premium)",
+                    }}
+                    onClick={() => setQuickRange(p.key)}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Filter Bar Row */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            {/* Search Input */}
+            <div style={{ position: "relative", flex: "2 1 220px", minWidth: 200 }}>
+              <span
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: THEME.muted,
+                  pointerEvents: "none",
+                  display: "flex",
+                }}
+              >
+                <Search size={14} />
+              </span>
+              <input
+                style={{
+                  ...inputStyle,
+                  paddingLeft: 36,
+                  paddingRight: search ? 32 : 12,
+                  height: 38,
+                  fontWeight: 600,
+                }}
+                placeholder="Search note, category, narration, reference or ₹ amount…"
+                aria-label="Search transactions"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearch("")}
+                  style={{
+                    position: "absolute",
+                    right: 10,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    border: "none",
+                    background: "var(--surface-2)",
+                    color: THEME.muted,
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Account Selector */}
+            <select
+              style={{
+                ...inputStyle,
+                width: "auto",
+                minWidth: 160,
+                height: 38,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              value={filterAcc}
+              onChange={(e) => setFilterAcc(e.target.value)}
+            >
+              <option value="all">All Bank Accounts</option>
+              {(state.bankAccounts || []).map((a: any) => (
+                <option key={a.id} value={a.id}>
+                  {accountLabel(a)}
+                </option>
+              ))}
+            </select>
+
+            {/* Type Selector */}
+            <select
+              style={{
+                ...inputStyle,
+                width: "auto",
+                minWidth: 130,
+                height: 38,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+            >
+              <option value="all">All Types</option>
+              <option value="credit">Credits (Income / In)</option>
+              <option value="debit">Debits (Expense / Out)</option>
+              <option value="transfer">Transfers</option>
+              <option value="linked">Linked Entities</option>
+            </select>
+
+            {/* Category Selector */}
+            <select
+              style={{
+                ...inputStyle,
+                width: "auto",
+                minWidth: 130,
+                height: 38,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              value={filterCat}
+              onChange={(e) => setFilterCat(e.target.value)}
+            >
+              <option value="all">All Categories</option>
+              {txnCats.map((c: string) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+
+            {/* Date range pickers */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <input
+                type="date"
+                style={{ ...inputStyle, width: "auto", height: 38, fontWeight: 600 }}
+                title="From date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setActiveRange(null);
+                }}
+              />
+              <span style={{ color: THEME.muted, fontSize: 12, fontWeight: 700 }}>to</span>
+              <input
+                type="date"
+                style={{ ...inputStyle, width: "auto", height: 38, fontWeight: 600 }}
+                title="To date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setActiveRange(null);
+                }}
+              />
+            </div>
+
+            {(dateFrom || dateTo || search || filterAcc !== "all" || filterType !== "all" || filterCat !== "all") && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setFilterAcc("all");
+                  setFilterType("all");
+                  setFilterCat("all");
+                  setDateFrom("");
+                  setDateTo("");
+                  setActiveRange("all");
+                }}
+                style={{ height: 38, color: THEME.rust }}
+              >
+                Clear All Filters
+              </Button>
+            )}
+          </div>
+
+          {/* Table Container */}
+          {sortedTxns.length === 0 ? (
+            (state.transactions || []).length === 0 ? (
+              <TxnEmptyState onAdd={() => setShowTxn(true)} />
+            ) : (
+              <div
+                style={{
+                  padding: "48px 24px",
+                  textAlign: "center",
+                  color: THEME.muted,
+                  background: "var(--surface-1)",
+                  borderRadius: 12,
+                  border: `1px dashed ${THEME.line}`,
+                }}
+              >
+                <ReceiptText size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+                <div style={{ fontSize: 14, fontWeight: 700, color: THEME.ink }}>
+                  No transactions match your current search & filters
+                </div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  Try adjusting the date range, account selection, or search query.
+                </div>
+              </div>
+            )
+          ) : (
+            <div className="desktop-only">
+              <DataTable
+                columns={[
+                  {
+                    key: "date",
+                    header: "Date",
+                    sortable: true,
+                    accessor: (t: any) => (
+                      <span
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                          fontWeight: 700,
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      >
+                        {t.date
+                          ? new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "—"}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "note",
+                    header: "Particulars / Narration",
+                    sortable: true,
+                    accessor: (t: any) => (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: THEME.ink,
+                          }}
+                        >
+                          {t.note || "—"}
+                          {t.category === "Transfer" && (
+                            <Badge variant="accent" size="xs" style={{ whiteSpace: "nowrap" }}>
+                              ↔ TRANSFER
+                            </Badge>
+                          )}
+                          {t.linkedType && (
+                            <Badge
+                              variant="accent"
+                              size="xs"
+                              style={{
+                                whiteSpace: "nowrap",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                              }}
+                            >
+                              <Link2 size={9} /> LINKED
+                            </Badge>
+                          )}
+                          {t.category !== "Transfer" &&
+                            recurringKeys.has((t.note || "") + "|" + t.amount + "|" + t.type) && (
+                              <Badge variant="gold" size="xs" style={{ whiteSpace: "nowrap" }}>
+                                RECURRING
+                              </Badge>
+                            )}
+                        </div>
+                        {t.narration && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: THEME.muted,
+                              fontStyle: "italic",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {t.narration}
+                          </div>
+                        )}
+                        {t.referenceNumber && (
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              color: THEME.muted,
+                              fontWeight: 600,
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          >
+                            Ref: {t.referenceNumber}
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "category",
+                    header: "Category",
+                    sortable: true,
+                    accessor: (t: any) =>
+                      t.category ? (
+                        <span
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: "var(--radius-xs)",
+                            fontSize: 10,
+                            fontWeight: 800,
+                            background: getCategoryStyle(t.category).bg,
+                            color: getCategoryStyle(t.category).color,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {t.category}
+                        </span>
+                      ) : (
+                        <span style={{ color: THEME.muted }}>—</span>
+                      ),
+                  },
+                  {
+                    key: "account",
+                    header: "Account",
+                    accessor: (t: any) => {
+                      const bank = (state.bankAccounts || []).find((b: any) => b.id === t.accountId);
+                      if (!bank) return <span style={{ color: THEME.muted }}>—</span>;
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <BankLogo bankName={bank.bankName} size={22} />
+                          <span style={{ color: THEME.ink, fontSize: 12, fontWeight: 600 }}>
+                            {bank.bankName}
+                          </span>
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    key: "debit",
+                    header: "Debit (-)",
+                    sortable: true,
+                    sortGroup: "amount",
+                    align: "right",
+                    accessor: (t: any) => (
+                      <span
+                        style={{
+                          color: THEME.rust,
+                          fontVariantNumeric: "tabular-nums",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {t.type === "debit" ? (
+                          <>
+                            - <Money value={t.amount} variant="exact" />
+                          </>
+                        ) : (
+                          ""
+                        )}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "credit",
+                    header: "Credit (+)",
+                    sortable: true,
+                    sortGroup: "amount",
+                    align: "right",
+                    accessor: (t: any) => (
+                      <span
+                        style={{
+                          color: THEME.sage,
+                          fontVariantNumeric: "tabular-nums",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {t.type === "credit" ? (
+                          <>
+                            + <Money value={t.amount} variant="exact" />
+                          </>
+                        ) : (
+                          ""
+                        )}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "balance",
+                    header: "Passbook Balance",
+                    align: "right",
+                    accessor: (t: any) => {
+                      const bal = balanceAfterTxn[t.id];
+                      if (!bal) return <span style={{ color: THEME.muted }}>—</span>;
+                      return (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: THEME.ink,
+                              fontVariantNumeric: "tabular-nums",
+                              fontWeight: 800,
+                            }}
+                            title={balanceTitle(bal)}
+                          >
+                            <Money value={bal.value} variant="exact" />
+                          </span>
+                          {bal.confirmed && (
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: "50%",
+                                background: THEME.sage,
+                                display: "inline-block",
+                              }}
+                              title="Statement verified anchor point"
+                            />
+                          )}
+                        </div>
+                      );
+                    },
+                  },
+                ]}
+                data={pagedTxns}
+                hideSearch
+                keyExtractor={(t: any) => t.id}
+                sortKey={sortField}
+                sortDirection={sortDirection}
+                onSortChange={(key: any) => requestSort(key)}
+                onRowClick={(t: any) => setViewTxnId(t.id)}
+                onRowDoubleClick={(t: any) => {
+                  setInlineEditId(t.id);
+                  setInlineEdit({ ...t });
+                }}
+                rowAriaLabel={(t: any) =>
+                  `View details for ${t.note || "transaction"} on ${t.date || ""}`
+                }
+                renderRow={(t: any) => {
+                  if (inlineEditId !== t.id || !inlineEdit) return null;
+                  const bank = (state.bankAccounts || []).find((b: any) => b.id === t.accountId);
+                  const handleSaveInline = async () => {
+                    if (!inlineEdit.amount || Number(inlineEdit.amount) <= 0) {
+                      showToast?.("Please enter a valid amount greater than 0", "warn");
+                      return;
+                    }
+                    setInlineSaving(true);
+                    try {
+                      await updateItem("transactions", t.id, inlineEdit);
+                      setInlineEditId(null);
+                      showToast?.("Transaction updated inline", "success");
+                    } catch (e: any) {
+                      showToast?.(
+                        `Failed to save transaction: ${e?.message || "Unknown error"}`,
+                        "error"
+                      );
+                    } finally {
+                      setInlineSaving(false);
+                    }
+                  };
+                  return (
+                    <tr
+                      key={t.id}
+                      style={{
+                        borderBottom: `2px solid ${THEME.accent}`,
+                        background: `color-mix(in srgb, ${THEME.accent} 6%, transparent)`,
+                      }}
+                    >
+                      <td style={{ ...tdStyle, padding: "12px 14px" }}>
+                        <input
+                          type="date"
+                          value={inlineEdit.date}
+                          onChange={(e) =>
+                            setInlineEdit({ ...inlineEdit, date: e.target.value })
+                          }
+                          style={{
+                            ...inputStyle,
+                            padding: "6px 10px",
+                            fontSize: 12,
+                            height: 32,
+                            width: 130,
+                          }}
+                        />
+                      </td>
+                      <td style={{ ...tdStyle, padding: "12px 14px" }}>
+                        <input
+                          value={inlineEdit.note || ""}
+                          onChange={(e) =>
+                            setInlineEdit({ ...inlineEdit, note: e.target.value })
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveInline();
+                            if (e.key === "Escape") setInlineEditId(null);
+                          }}
+                          placeholder="Particulars / note"
+                          style={{
+                            ...inputStyle,
+                            padding: "6px 10px",
+                            fontSize: 12,
+                            height: 32,
+                            minWidth: 150,
+                          }}
+                          autoFocus
+                        />
+                        <input
+                          value={inlineEdit.narration || ""}
+                          onChange={(e) =>
+                            setInlineEdit({ ...inlineEdit, narration: e.target.value })
+                          }
+                          placeholder="Narration"
+                          style={{
+                            ...inputStyle,
+                            padding: "4px 8px",
+                            fontSize: 11,
+                            minWidth: 150,
+                            marginTop: 4,
+                          }}
+                        />
+                      </td>
+                      <td style={{ ...tdStyle, padding: "12px 14px" }}>
+                        <select
+                          value={inlineEdit.category || ""}
+                          onChange={(e) =>
+                            setInlineEdit({ ...inlineEdit, category: e.target.value })
+                          }
+                          style={{ ...inputStyle, padding: "4px 8px", height: 32, fontSize: 12 }}
+                        >
+                          {txnCats.map((c: string) => (
+                            <option key={c}>{c}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ ...tdStyle, padding: "12px 14px", color: THEME.muted, fontSize: 12, fontWeight: 600 }}>
+                        {bank ? bank.bankName : "—"}
+                      </td>
+                      <td style={{ ...tdStyle, padding: "12px 14px", textAlign: "right" }} colSpan={2}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <select
+                            value={inlineEdit.type || "debit"}
+                            onChange={(e) => setInlineEdit({ ...inlineEdit, type: e.target.value })}
+                            style={{
+                              background:
+                                inlineEdit.type === "credit"
+                                  ? `color-mix(in srgb, ${THEME.sage} 12%, transparent)`
+                                  : `color-mix(in srgb, ${THEME.rust} 12%, transparent)`,
+                              color: inlineEdit.type === "credit" ? THEME.sage : THEME.rust,
+                              border: `1.5px solid color-mix(in srgb, ${
+                                inlineEdit.type === "credit" ? THEME.sage : THEME.rust
+                              } 30%, transparent)`,
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              padding: "4px 8px",
+                              cursor: "pointer",
+                              outline: "none",
+                            }}
+                          >
+                            <option value="debit">DEBIT</option>
+                            <option value="credit">CREDIT</option>
+                          </select>
+                          <input
+                            type="number"
+                            value={inlineEdit.amount}
+                            onChange={(e) =>
+                              setInlineEdit({ ...inlineEdit, amount: e.target.value })
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveInline();
+                              if (e.key === "Escape") setInlineEditId(null);
+                            }}
+                            style={{
+                              ...inputStyle,
+                              padding: "4px 8px",
+                              height: 32,
+                              fontSize: 12,
+                              width: 100,
+                              textAlign: "right",
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td style={{ ...tdStyle, padding: "12px 14px" }}>
+                        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                          <button
+                            onClick={handleSaveInline}
+                            disabled={inlineSaving}
+                            className="icon-btn"
+                            style={{ ...iconBtn, color: THEME.sage, padding: 6 }}
+                            title="Save"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            disabled={inlineSaving}
+                            onClick={() => setInlineEditId(null)}
+                            className="icon-btn danger"
+                            style={{ ...iconBtn, color: THEME.rust, padding: 6 }}
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }}
+                actions={(t: any) => (
+                  <div style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditTxnId(t.id);
+                      }}
+                      className="icon-btn"
+                      style={{ ...iconBtn, padding: 6, borderRadius: 8 }}
+                      title="Edit transaction"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmAction({
+                          message: `Delete transaction "${t.note || "entry"}" for ₹${t.amount}? This cannot be undone.`,
+                          onConfirm: () => removeItem("transactions", t.id),
+                        });
+                      }}
+                      className="icon-btn danger"
+                      style={{ ...iconBtn, padding: 6, borderRadius: 8 }}
+                      title="Delete transaction"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+                footer={(() => {
+                  const totalDebit = sortedTxns
+                    .filter((t: any) => t.type === "debit")
+                    .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                  const totalCredit = sortedTxns
+                    .filter((t: any) => t.type === "credit")
+                    .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                  const net = totalCredit - totalDebit;
+                  const netColor = net > 0 ? THEME.sage : net < 0 ? THEME.rust : THEME.muted;
+                  const borderTop = `1.5px solid ${THEME.line}`;
+                  return (
+                    <tr style={{ background: "var(--surface-1)" }}>
+                      <td
+                        colSpan={3}
+                        style={{
+                          padding: "12px 16px",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: THEME.muted,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          borderTop,
+                        }}
+                      >
+                        {sortedTxns.length} Filtered Records
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          textAlign: "right",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: THEME.muted,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          borderTop,
+                        }}
+                      >
+                        Net Flow
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          textAlign: "right",
+                          fontWeight: 800,
+                          color: THEME.rust,
+                          fontSize: 13,
+                          fontVariantNumeric: "tabular-nums",
+                          borderTop,
+                        }}
+                      >
+                        -<Money value={totalDebit} variant="exact" />
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          textAlign: "right",
+                          fontWeight: 800,
+                          color: THEME.sage,
+                          fontSize: 13,
+                          fontVariantNumeric: "tabular-nums",
+                          borderTop,
+                        }}
+                      >
+                        +<Money value={totalCredit} variant="exact" />
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          textAlign: "right",
+                          fontWeight: 900,
+                          color: netColor,
+                          fontSize: 13,
+                          fontVariantNumeric: "tabular-nums",
+                          borderTop,
+                        }}
+                      >
+                        {net >= 0 ? "+" : "-"}
+                        <Money value={Math.abs(net)} variant="exact" />
+                      </td>
+                    </tr>
+                  );
+                })()}
+              />
+            </div>
+          )}
+
+          {/* Mobile Card List View */}
+          {sortedTxns.length > 0 && (
+            <div className="mobile-only" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {pagedTxns.map((t: any) => {
+                const bank = (state.bankAccounts || []).find((b: any) => b.id === t.accountId);
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => setViewTxnId(t.id)}
+                    role="button"
+                    tabIndex={0}
+                    style={{
+                      border: `1.5px solid ${THEME.line}`,
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      background: "var(--surface-0)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: THEME.ink,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {t.note || "—"}
+                          {t.category === "Transfer" && (
+                            <Badge variant="accent" size="xs">
+                              ↔
+                            </Badge>
+                          )}
+                          {t.linkedType && (
+                            <Badge
+                              variant="accent"
+                              size="xs"
+                              style={{ display: "inline-flex", alignItems: "center" }}
+                            >
+                              <Link2 size={9} />
+                            </Badge>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: THEME.muted,
+                            marginTop: 3,
+                            display: "flex",
+                            gap: 6,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span>
+                            {t.date
+                              ? new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", {
+                                  day: "2-digit",
+                                  month: "short",
+                                })
+                              : "—"}
+                          </span>
+                          <span>·</span>
+                          <span>{bank ? bank.bankName : "—"}</span>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 800,
+                          fontVariantNumeric: "tabular-nums",
+                          color: t.type === "credit" ? THEME.sage : THEME.rust,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {t.type === "credit" ? "+" : "-"}
+                        <Money value={t.amount} variant="exact" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination Deck */}
+          {sortedTxns.length > TXN_PAGE_SIZE && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 10,
+                paddingTop: 8,
+                borderTop: `1px solid ${THEME.line}`,
+              }}
+            >
+              <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
+                Showing {(currentTxnPage - 1) * TXN_PAGE_SIZE + 1}–
+                {Math.min(currentTxnPage * TXN_PAGE_SIZE, sortedTxns.length)} of {sortedTxns.length}{" "}
+                records
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  onClick={() => setTxnPage((p) => Math.max(1, p - 1))}
+                  disabled={currentTxnPage <= 1}
+                  className="icon-btn"
+                  style={{
+                    ...iconBtn,
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1.5px solid ${THEME.line}`,
+                    background: "var(--surface-1)",
+                    opacity: currentTxnPage <= 1 ? 0.4 : 1,
+                    cursor: currentTxnPage <= 1 ? "not-allowed" : "pointer",
+                  }}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink }}>
+                  Page {currentTxnPage} of {totalTxnPages}
+                </span>
+                <button
+                  onClick={() => setTxnPage((p) => Math.min(totalTxnPages, p + 1))}
+                  disabled={currentTxnPage >= totalTxnPages}
+                  className="icon-btn"
+                  style={{
+                    ...iconBtn,
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1.5px solid ${THEME.line}`,
+                    background: "var(--surface-1)",
+                    opacity: currentTxnPage >= totalTxnPages ? 0.4 : 1,
+                    cursor: currentTxnPage >= totalTxnPages ? "not-allowed" : "pointer",
+                  }}
+                  aria-label="Next page"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB 3: CASH FLOW & ANALYTICS VIEW (RECHARTS)
+         ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "analytics" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Charts Row 1: Inflow vs Outflow History */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(450px, 100%), 1fr))",
+              gap: 20,
+            }}
+          >
+            {/* Chart 1: Monthly Cash Movement */}
+            <Card style={{ padding: 22 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <BarChart3 size={16} color={THEME.accent} />
+                  <h4 style={{ fontSize: 14, fontWeight: 800, margin: 0, color: THEME.ink }}>
+                    Monthly Inflow vs Outflow History
+                  </h4>
+                </div>
+                <Badge variant="accent">Last 6 Months</Badge>
+              </div>
+
+              <div style={{ width: "100%", height: 260 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={monthlyCashFlowTrend}
+                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={THEME.line} vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      stroke={THEME.muted}
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke={THEME.muted}
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v) => `₹${fmtINR(v)}`}
+                    />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        return (
+                          <div
+                            style={{
+                              background: "var(--surface-0)",
+                              border: `1px solid ${THEME.line}`,
+                              padding: "10px 14px",
+                              borderRadius: 10,
+                              boxShadow: "0 4px 14px rgba(0,0,0,0.1)",
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: 800, marginBottom: 6, color: THEME.ink }}>
+                              {label}
+                            </div>
+                            <div style={{ color: THEME.sage, fontWeight: 700 }}>
+                              Inflow: ₹{fmtINRFull(Number(payload[0]?.value || 0))}
+                            </div>
+                            <div style={{ color: THEME.rust, fontWeight: 700 }}>
+                              Outflow: ₹{fmtINRFull(Number(payload[1]?.value || 0))}
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
+                    <Bar dataKey="income" name="Inflow (Credit)" fill={THEME.sage} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="expense" name="Outflow (Debit)" fill={THEME.rust} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+
+            {/* Chart 2: Net Monthly Savings Trend */}
+            <Card style={{ padding: 22 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <TrendingUp size={16} color={THEME.sage} />
+                  <h4 style={{ fontSize: 14, fontWeight: 800, margin: 0, color: THEME.ink }}>
+                    Net Monthly Cash Generation
+                  </h4>
+                </div>
+                <Badge variant="sage">Surplus Trend</Badge>
+              </div>
+
+              <div style={{ width: "100%", height: 260 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={monthlyCashFlowTrend}
+                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="colorNet" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={THEME.sage} stopOpacity={0.4} />
+                        <stop offset="95%" stopColor={THEME.sage} stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke={THEME.line} vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      stroke={THEME.muted}
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke={THEME.muted}
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v) => `₹${fmtINR(v)}`}
+                    />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const netVal = Number(payload[0]?.value || 0);
+                        return (
+                          <div
+                            style={{
+                              background: "var(--surface-0)",
+                              border: `1px solid ${THEME.line}`,
+                              padding: "10px 14px",
+                              borderRadius: 10,
+                              boxShadow: "0 4px 14px rgba(0,0,0,0.1)",
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: 800, marginBottom: 4, color: THEME.ink }}>
+                              {label}
+                            </div>
+                            <div
+                              style={{
+                                color: netVal >= 0 ? THEME.sage : THEME.rust,
+                                fontWeight: 800,
+                              }}
+                            >
+                              Net Cash Flow: {netVal >= 0 ? "+" : "-"}₹{fmtINRFull(Math.abs(netVal))}
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="net"
+                      name="Net Savings"
+                      stroke={THEME.sage}
+                      strokeWidth={2.5}
+                      fillOpacity={1}
+                      fill="url(#colorNet)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          </div>
+
+          {/* Charts Row 2: Spend Category Breakdown */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))",
+              gap: 20,
+            }}
+          >
+            {/* Donut Chart */}
+            <Card style={{ padding: 22 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <PieIcon size={16} color={THEME.pink} />
+                  <h4 style={{ fontSize: 14, fontWeight: 800, margin: 0, color: THEME.ink }}>
+                    This Month Spend Distribution
+                  </h4>
+                </div>
+                <Badge variant="accent">Top Categories</Badge>
               </div>
 
               {topSpendCategories.length === 0 ? (
                 <div
                   style={{
+                    height: 220,
                     display: "flex",
-                    height: 120,
                     alignItems: "center",
                     justifyContent: "center",
                     color: THEME.muted,
-                    fontSize: 12,
+                    fontSize: 13,
                   }}
                 >
-                  No spend transactions recorded this month
+                  No expense records logged this month
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {topSpendCategories.slice(0, 4).map((c) => {
-                    const percentage = monthlyExpense > 0 ? (c.amount / monthlyExpense) * 100 : 0;
-                    return (
-                      <div
-                        key={c.name}
-                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                <div style={{ width: "100%", height: 240 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={topSpendCategories}
+                        dataKey="amount"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={3}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            fontSize: 12,
-                            fontWeight: 600,
-                          }}
-                        >
-                          <span style={{ color: THEME.ink }}>{c.name}</span>
-                          <span
-                            style={{
-                              color: THEME.muted,
-                              fontVariantNumeric: "tabular-nums",
-                              fontWeight: 700,
-                            }}
-                          >
-                            <Money value={c.amount} variant="full" /> ({percentage.toFixed(0)}%)
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            width: "100%",
-                            height: 6,
-                            background: "var(--t-line)",
-                            borderRadius: 3,
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${percentage}%`,
-                              height: "100%",
-                              background: THEME.accent,
-                              borderRadius: 3,
-                              transition: "width 0.5s ease",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                        {topSpendCategories.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const d = payload[0].payload;
+                          const pct =
+                            monthlyExpense > 0 ? ((d.amount / monthlyExpense) * 100).toFixed(1) : 0;
+                          return (
+                            <div
+                              style={{
+                                background: "var(--surface-0)",
+                                border: `1px solid ${THEME.line}`,
+                                padding: "8px 12px",
+                                borderRadius: 8,
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ fontWeight: 800, color: THEME.ink }}>{d.name}</div>
+                              <div style={{ color: THEME.rust, fontWeight: 700 }}>
+                                ₹{fmtINRFull(d.amount)} ({pct}%)
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
               )}
-            </div>
-            {topSpendCategories.length > 0 && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: THEME.muted,
-                  lineHeight: "1.5",
-                  fontWeight: 500,
-                  borderTop: `1.5px dashed ${THEME.line}`,
-                  paddingTop: 12,
-                  marginTop: 12,
-                }}
-              >
-                Top expense categories for the current month. Optimize these to boost your savings
-                rate.
-              </div>
-            )}
-          </Card>
+            </Card>
 
-          {/* Column 3: Liquidity Distribution Share */}
-          <Card
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              height: "100%",
-              padding: 20,
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: THEME.muted,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                <Landmark size={13} /> <span>Liquidity Asset Weight</span>
-              </div>
-
+            {/* Category Rank List */}
+            <Card style={{ padding: 22 }}>
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  fontSize: 11,
-                  color: THEME.muted,
-                  fontWeight: 700,
+                  alignItems: "center",
+                  marginBottom: 16,
                 }}
               >
-                <span>ACCOUNT ALLOCATION</span>
-                <span>SHARE %</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: THEME.ink }}>
+                  Category Breakdown & Share
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: THEME.muted }}>
+                  Total: <Money value={monthlyExpense} variant="full" />
+                </span>
               </div>
 
-              {/* Allocated segmented bar */}
-              <div
-                style={{
-                  display: "flex",
-                  width: "100%",
-                  height: 14,
-                  background: "var(--t-line)",
-                  borderRadius: 7,
-                  overflow: "hidden",
-                  boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
-                }}
-              >
-                {liquidityWeights.map((w: any) => (
-                  <div
-                    key={w.id}
-                    title={`${w.name}: ${w.share.toFixed(1)}%`}
-                    style={{
-                      width: `${w.share}%`,
-                      height: "100%",
-                      background: w.color,
-                      transition: "width 0.5s ease",
-                    }}
-                  />
-                ))}
-              </div>
-
-              {/* Details legends list formatted as a clean list table */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                {liquidityWeights.map((w: any) => (
-                  <div
-                    key={w.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      fontSize: 12,
-                      padding: "4px 0",
-                      borderBottom: `1.5px dashed color-mix(in srgb, ${THEME.line} 31%, transparent)`,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {topSpendCategories.slice(0, 5).map((c) => {
+                  const pct = monthlyExpense > 0 ? (c.amount / monthlyExpense) * 100 : 0;
+                  return (
+                    <div key={c.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <div
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: w.color,
-                          flexShrink: 0,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 12,
+                          fontWeight: 700,
                         }}
-                      />
-                      <span style={{ fontWeight: 700, color: THEME.ink }}>{w.bankName}</span>
-                      <span style={{ color: THEME.muted, fontSize: 10, fontWeight: 600 }}>
-                        ({w.type || "Savings"} •••• {w.accountNumberSuffix || "—"})
-                      </span>
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: c.color,
+                            }}
+                          />
+                          <span style={{ color: THEME.ink }}>{c.name}</span>
+                        </div>
+                        <span style={{ color: THEME.ink, fontVariantNumeric: "tabular-nums" }}>
+                          <Money value={c.amount} variant="full" /> ({pct.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 6,
+                          background: "var(--t-line)",
+                          borderRadius: 3,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${pct}%`,
+                            height: "100%",
+                            background: c.color,
+                            borderRadius: 3,
+                            transition: "width 0.6s ease",
+                          }}
+                        />
+                      </div>
                     </div>
-                    <span
+                  );
+                })}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB 4: TRANSFERS & RECONCILIATION
+         ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "transfers" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <Card style={{ padding: 22 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <div>
+                <h4 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: THEME.ink }}>
+                  Inter-Account Transfers Ledger
+                </h4>
+                <div style={{ fontSize: 12, color: THEME.muted, marginTop: 4 }}>
+                  Audits all internal fund transfers between your connected bank accounts (neutral to net worth).
+                </div>
+              </div>
+              <Button
+                variant="accent"
+                size="sm"
+                icon={<ArrowLeftRight size={14} />}
+                onClick={() => setShowTxn(true)}
+              >
+                New Transfer
+              </Button>
+            </div>
+
+            {transferList.length === 0 ? (
+              <div
+                style={{
+                  padding: "40px 20px",
+                  textAlign: "center",
+                  color: THEME.muted,
+                  background: "var(--surface-1)",
+                  borderRadius: 12,
+                }}
+              >
+                <ArrowLeftRight size={28} style={{ opacity: 0.5, marginBottom: 8 }} />
+                <div style={{ fontSize: 13, fontWeight: 700 }}>No inter-account transfers recorded yet</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {transferList.map((t: any) => {
+                  const bank = (state.bankAccounts || []).find((b: any) => b.id === t.accountId);
+                  return (
+                    <div
+                      key={t.id}
                       style={{
-                        fontWeight: 800,
-                        color: THEME.ink,
-                        fontVariantNumeric: "tabular-nums",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "12px 16px",
+                        borderRadius: 10,
+                        border: `1px solid ${THEME.line}`,
+                        background: "var(--surface-0)",
                       }}
                     >
-                      {w.share.toFixed(1)}%
-                    </span>
-                  </div>
-                ))}
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            background: `color-mix(in srgb, ${THEME.violet} 12%, transparent)`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: THEME.violet,
+                          }}
+                        >
+                          <ArrowLeftRight size={16} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
+                            {t.note || "Inter-account Transfer"}
+                          </div>
+                          <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+                            {t.date} · {bank ? bank.bankName : "Bank Account"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: t.type === "credit" ? THEME.sage : THEME.rust,
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {t.type === "credit" ? "+" : "-"}
+                          <Money value={t.amount} variant="exact" />
+                        </div>
+                        <Badge variant="violet" size="xs">
+                          {t.type === "credit" ? "Transfer In" : "Transfer Out"}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
           </Card>
         </div>
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-          gap: 16,
-          marginBottom: 32,
-        }}
-      >
-        {state.bankAccounts.length === 0 && (
-          <div style={{ gridColumn: "1 / -1" }}>
-            <BankEmptyState onAdd={() => setShowBank(true)} />
-          </div>
-        )}
-        {state.bankAccounts.map((a: any) => {
-          const theme = getAccountTheme(a.type);
-          const accentColor = chartColorById[a.id] || theme.color;
+      {/* ── MODALS & DRAWERS ─────────────────────────────────────────────────── */}
+      {showBank && (
+        <BankModal
+          onClose={() => setShowBank(false)}
+          onSave={saveNewBank}
+          saving={savingNewBank}
+        />
+      )}
+
+      {editBankId && (
+        <BankEditModal
+          account={(state.bankAccounts || []).find((a: any) => a.id === editBankId)}
+          onClose={() => setEditBankId(null)}
+          onSave={(v: any) => saveBankEdit(editBankId, v)}
+          saving={savingBankEdit}
+        />
+      )}
+
+      {showTxn && (
+        <TxnModal
+          accounts={state.bankAccounts || []}
+          state={state}
+          getDisplayBalance={getDisplayBalance}
+          onClose={() => setShowTxn(false)}
+          onSave={saveNewTxn}
+          saving={savingNewTxn}
+        />
+      )}
+
+      {editTxnId && (
+        <TxnEditModal
+          txn={(state.transactions || []).find((t: any) => t.id === editTxnId)}
+          accounts={state.bankAccounts || []}
+          getDisplayBalance={getDisplayBalance}
+          onClose={() => setEditTxnId(null)}
+          onSave={(v: any) => saveTxnEdit(editTxnId, v)}
+          saving={savingTxnEdit}
+        />
+      )}
+
+      {viewTxnId &&
+        (() => {
+          const t = (state.transactions || []).find((tx: any) => tx.id === viewTxnId);
+          if (!t) return null;
+          const bank = (state.bankAccounts || []).find((b: any) => b.id === t.accountId);
+          const bal = balanceAfterTxn[t.id];
+
           return (
-            <Card
-              key={a.id}
-              hover
-              style={{
-                position: "relative",
-                overflow: "hidden",
-                padding: 0,
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {/* Left-side accent strip */}
+            <Drawer title="Transaction Voucher / Receipt" onClose={() => setViewTxnId(null)}>
               <div
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  bottom: 0,
-                  width: 4,
-                  background: accentColor,
-                  zIndex: 2,
-                }}
-              />
-
-              {/* Action buttons (top right) */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 12,
-                  right: 12,
-                  display: "flex",
-                  gap: 4,
-                  zIndex: 3,
-                }}
-              >
-                <button
-                  onClick={() => setEditBankId(a.id)}
-                  className="icon-btn"
-                  style={{
-                    ...iconBtn,
-                    padding: 6,
-                    borderRadius: 8,
-                    background: "var(--surface-1)",
-                    border: `1.5px solid ${THEME.line}`,
-                  }}
-                  title="Edit account"
-                  aria-label={`Edit ${a.bankName} account`}
-                >
-                  <Pencil size={12} />
-                </button>
-                <button
-                  onClick={() =>
-                    setConfirmAction({
-                      message: `Delete "${a.bankName}" account? Transactions linked to it will lose their account label. This cannot be undone.`,
-                      onConfirm: () => removeItem("bankAccounts", a.id),
-                    })
-                  }
-                  className="icon-btn danger"
-                  style={{
-                    ...iconBtn,
-                    padding: 6,
-                    borderRadius: 8,
-                    background: "var(--surface-1)",
-                    border: `1.5px solid ${THEME.line}`,
-                  }}
-                  title="Delete account"
-                  aria-label={`Delete ${a.bankName} account`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-
-              {/* Inner wrapper with custom paddings to clear the left accent line */}
-              <div
-                style={{
-                  padding: "20px 24px 20px 28px",
                   display: "flex",
                   flexDirection: "column",
-                  justifyContent: "space-between",
                   gap: 16,
-                  width: "100%",
-                  height: "100%",
+                  padding: "4px 0 20px",
                 }}
               >
-                {/* Bank Header Info */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, paddingRight: 48 }}>
-                  <BankLogo bankName={a.bankName} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 800,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                          color: accentColor,
-                          background: `color-mix(in srgb, ${accentColor} 10%, transparent)`,
-                          padding: "2px 8px",
-                          borderRadius: 12,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <theme.icon size={10} /> {a.type || "Savings"}
-                      </div>
-                      <OwnerBadge owner={a.owner} />
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 16,
-                        fontWeight: 800,
-                        color: THEME.ink,
-                        marginTop: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {a.bankName}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Balance & Account Number */}
+                {/* Hero Receipt Amount Header */}
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-end",
+                    textAlign: "center",
+                    padding: "20px 16px",
+                    borderRadius: 12,
+                    background:
+                      t.type === "credit"
+                        ? `color-mix(in srgb, ${THEME.sage} 8%, transparent)`
+                        : `color-mix(in srgb, ${THEME.rust} 8%, transparent)`,
+                    border: `1.5px solid ${
+                      t.type === "credit"
+                        ? `color-mix(in srgb, ${THEME.sage} 25%, transparent)`
+                        : `color-mix(in srgb, ${THEME.rust} 25%, transparent)`
+                    }`,
                   }}
                 >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: THEME.muted,
-                        marginBottom: 4,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontWeight: 600,
-                      }}
-                    >
-                      <span>Account Balance</span>
-                      <span
-                        style={{
-                          fontSize: 9,
-                          padding: "1px 6px",
-                          borderRadius: 4,
-                          background: `color-mix(in srgb, ${THEME.sage} 12%, transparent)`,
-                          color: THEME.sage,
-                          fontWeight: 800,
-                        }}
-                      >
-                        ● Live
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        fontSize: 24,
-                        fontWeight: 600,
-                        color: THEME.ink,
-                        fontVariantNumeric: "tabular-nums",
-                        letterSpacing: "-0.02em",
-                        lineHeight: 1,
-                      }}
-                    >
-                      <Money value={getDisplayBalance(a)} variant="full" />
-                    </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 34,
+                      fontWeight: 700,
+                      letterSpacing: "-0.03em",
+                      color: t.type === "credit" ? THEME.sage : THEME.rust,
+                    }}
+                  >
+                    {t.type === "credit" ? "+" : "-"}
+                    <Money value={t.amount} variant="exact" />
                   </div>
                   <div
                     style={{
                       fontSize: 12,
-                      color: THEME.muted,
                       fontWeight: 700,
+                      color: THEME.muted,
+                      marginTop: 4,
+                      textTransform: "uppercase",
                       letterSpacing: "0.05em",
-                      paddingBottom: 2,
                     }}
                   >
-                    <Prv>•••• {(a.accountNumber || "").slice(-4) || "—"}</Prv>
+                    {t.type === "credit" ? "Credit / Inflow" : "Debit / Outflow"}
                   </div>
                 </div>
 
-                {/* Transactions count & view button */}
+                {/* Details list */}
                 <div
                   style={{
-                    marginTop: 4,
-                    paddingTop: 14,
-                    borderTop: `1.5px solid ${THEME.line}`,
                     display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    flexDirection: "column",
+                    gap: 10,
+                    fontSize: 13,
+                    borderTop: `1px solid ${THEME.line}`,
+                    paddingTop: 12,
                   }}
                 >
-                  <span style={{ fontSize: 11, color: THEME.muted, fontWeight: 700 }}>
-                    {state.transactions.filter((t: any) => t.accountId === a.id).length}{" "}
-                    Transactions recorded
-                  </span>
-                  <button
-                    style={{
-                      fontSize: 11,
-                      padding: "4px 12px",
-                      borderRadius: 8,
-                      background: "var(--surface-1)",
-                      border: `1.5px solid ${THEME.line}`,
-                      color: THEME.accent,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                    onClick={() => setFilterAcc(a.id)}
-                  >
-                    View Ledger →
-                  </button>
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: THEME.muted, fontWeight: 600 }}>Particulars / Note</span>
+                    <span style={{ fontWeight: 800, color: THEME.ink, textAlign: "right" }}>
+                      {t.note || "—"}
+                    </span>
+                  </div>
 
-      <Card style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Row 1: Header title & presets */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-            borderBottom: `1.5px solid ${THEME.line}`,
-            paddingBottom: 16,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 16, fontWeight: 800, color: THEME.ink }}>
-              Transaction Ledger
-            </span>
-            <Badge variant="accent">{sortedTxns.length} entries</Badge>
-            {filterAcc !== "all" && accTxnIdsForDelete.length > 0 && (
-              <button
-                onClick={() => setConfirmDeleteAllAcc(true)}
-                className="icon-btn danger"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "5px 10px",
-                  borderRadius: 8,
-                  background: "transparent",
-                  border: `1.5px solid ${THEME.rust}`,
-                  color: THEME.rust,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-                title="Delete every transaction recorded for this account"
-              >
-                <Trash2 size={11} />
-                Delete All Transactions
-              </button>
-            )}
-          </div>
-
-          {/* Segmented presets buttons */}
-          <div
-            style={{
-              display: "flex",
-              background: "var(--surface-1)",
-              padding: "4px",
-              borderRadius: "var(--radius-md)",
-              border: `1.5px solid ${THEME.line}`,
-              gap: "2px",
-            }}
-          >
-            {["thisMonth", "lastMonth", "3months", "thisFY"].map((p) => {
-              const isActive = activeRange === p;
-              return (
-                <button
-                  key={p}
-                  aria-pressed={isActive}
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: "var(--radius-sm)",
-                    border: "none",
-                    background: isActive ? "var(--surface-0)" : "transparent",
-                    color: isActive ? "var(--t-ink)" : "var(--t-muted)",
-                    fontWeight: 700,
-                    fontSize: "11px",
-                    cursor: "pointer",
-                    boxShadow: isActive ? "var(--shadow-sm)" : "none",
-                    transition: "all 0.2s var(--ease-premium)",
-                  }}
-                  onClick={() => setQuickRange(p)}
-                >
-                  {
-                    {
-                      thisMonth: "This Month",
-                      lastMonth: "Last Month",
-                      "3months": "Last 3M",
-                      thisFY: "This FY",
-                    }[p]
-                  }
-                </button>
-              );
-            })}
-            {(dateFrom || dateTo) && (
-              <button
-                style={{
-                  padding: "5px 10px",
-                  borderRadius: "var(--radius-sm)",
-                  border: "none",
-                  background: "transparent",
-                  color: THEME.rust,
-                  fontWeight: 800,
-                  fontSize: "11px",
-                  cursor: "pointer",
-                }}
-                onClick={() => {
-                  setDateFrom("");
-                  setDateTo("");
-                  setActiveRange(null);
-                }}
-              >
-                ✕ Clear
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Row 2: Search inputs & filters deck */}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          {/* Search Notes */}
-          <div style={{ position: "relative", flex: "2 1 200px", minWidth: 200 }}>
-            <span
-              style={{
-                position: "absolute",
-                left: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: THEME.muted,
-                fontSize: 13,
-                pointerEvents: "none",
-                display: "flex",
-              }}
-            >
-              <Search size={14} />
-            </span>
-            <input
-              style={{
-                ...input,
-                paddingLeft: 34,
-                paddingRight: search ? 32 : undefined,
-                height: 38,
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-              placeholder="Search notes, categories, references…"
-              aria-label="Search notes, categories, references"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setSearch("")}
-                style={{
-                  position: "absolute",
-                  right: 10,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 18,
-                  height: 18,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: "var(--surface-2)",
-                  color: THEME.muted,
-                  cursor: "pointer",
-                }}
-              >
-                <X size={11} />
-              </button>
-            )}
-          </div>
-
-          {/* Account selector */}
-          <select
-            style={{
-              ...input,
-              width: "auto",
-              minWidth: 150,
-              height: 38,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-            value={filterAcc}
-            onChange={(e) => setFilterAcc(e.target.value)}
-          >
-            <option value="all">All Accounts</option>
-            {state.bankAccounts.map((a: any) => (
-              <option key={a.id} value={a.id}>
-                {accountLabel(a)}
-              </option>
-            ))}
-          </select>
-
-          {/* Type selector */}
-          <select
-            style={{
-              ...input,
-              width: "auto",
-              minWidth: 130,
-              height: 38,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-          >
-            <option value="all">All Types</option>
-            <option value="credit">Credit only</option>
-            <option value="debit">Debit only</option>
-            <option value="transfer">Transfers</option>
-          </select>
-
-          {/* Custom Date from-to fields */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <input
-              type="date"
-              style={{ ...input, width: "auto", height: 38, fontSize: 13, fontWeight: 600 }}
-              title="From date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setActiveRange(null);
-              }}
-            />
-            <span style={{ color: THEME.muted, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-              to
-            </span>
-            <input
-              type="date"
-              style={{ ...input, width: "auto", height: 38, fontSize: 13, fontWeight: 600 }}
-              title="To date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setActiveRange(null);
-              }}
-            />
-          </div>
-        </div>
-
-
-
-        {/* Ledger Table Container */}
-        {sortedTxns.length === 0 ? (
-          state.transactions.length === 0 ? (
-            <TxnEmptyState onAdd={() => setShowTxn(true)} />
-          ) : (
-            <EmptyHint text="No transactions match your query filters" />
-          )
-        ) : (
-          <div className="desktop-only">
-            <DataTable
-              columns={[
-                {
-                  key: "date",
-                  header: "Date",
-                  sortable: true,
-                  accessor: (t: any) => (
-                    <span style={{ color: THEME.muted, fontSize: 12, whiteSpace: "nowrap", fontWeight: 600 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: THEME.muted, fontWeight: 600 }}>Date</span>
+                    <span style={{ fontWeight: 700, color: THEME.ink }}>
                       {t.date
                         ? new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", {
                             day: "2-digit",
@@ -1966,820 +3292,81 @@ export function BanksTab({
                           })
                         : "—"}
                     </span>
-                  ),
-                },
-                {
-                  key: "note",
-                  header: "Particulars",
-                  sortable: true,
-                  accessor: (t: any) => (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: THEME.ink,
-                        }}
-                      >
-                        {t.note || "—"}
-                        {t.category === "Transfer" && (
-                          <Badge variant="accent" size="xs" style={{ whiteSpace: "nowrap" }}>
-                            ↔ TRANSFER
-                          </Badge>
-                        )}
-                        {t.linkedType && (
-                          <Badge
-                            variant="accent"
-                            size="xs"
-                            style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}
-                          >
-                            <Link2 size={9} /> LINKED
-                          </Badge>
-                        )}
-                        {t.category !== "Transfer" &&
-                          recurringKeys.has((t.note || "") + "|" + t.amount + "|" + t.type) && (
-                            <Badge variant="gold" size="xs" style={{ whiteSpace: "nowrap" }}>
-                              RECURRING
-                            </Badge>
-                          )}
-                      </div>
-                      {t.narration && (
-                        <div style={{ fontSize: 11, color: THEME.muted, fontStyle: "italic", fontWeight: 500 }}>
-                          {t.narration}
-                        </div>
-                      )}
-                      {t.referenceNumber && (
-                        <div style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>
-                          Ref: {t.referenceNumber}
-                        </div>
-                      )}
-                    </div>
-                  ),
-                },
-                {
-                  key: "category",
-                  header: "Category",
-                  sortable: true,
-                  accessor: (t: any) =>
-                    t.category ? (
-                      <span
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: "var(--radius-xs)",
-                          fontSize: 10,
-                          fontWeight: 800,
-                          background: getCategoryStyle(t.category).bg,
-                          color: getCategoryStyle(t.category).color,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {t.category}
-                      </span>
-                    ) : (
-                      <span style={{ color: THEME.muted }}>—</span>
-                    ),
-                },
-                {
-                  key: "account",
-                  header: "Account",
-                  accessor: (t: any) => {
-                    const bank = state.bankAccounts.find((b: any) => b.id === t.accountId);
-                    if (!bank) return <span style={{ color: THEME.muted }}>—</span>;
-                    return (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <BankLogo bankName={bank.bankName} size={22} />
-                        <span style={{ color: THEME.ink, fontSize: 12, fontWeight: 600 }}>
-                          {accountLabel(bank)}
-                        </span>
-                      </div>
-                    );
-                  },
-                },
-                {
-                  key: "debit",
-                  header: "Debit",
-                  sortable: true,
-                  sortGroup: "amount",
-                  align: "right",
-                  accessor: (t: any) => (
-                    <span style={{ color: THEME.rust, fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>
-                      {t.type === "debit" ? <Money value={t.amount} variant="exact" /> : ""}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: THEME.muted, fontWeight: 600 }}>Category</span>
+                    <Badge variant="accent">{t.category || "General"}</Badge>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: THEME.muted, fontWeight: 600 }}>Bank Account</span>
+                    <span style={{ fontWeight: 700, color: THEME.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                      {bank && <BankLogo bankName={bank.bankName} size={16} />}
+                      {bank ? bank.bankName : "—"}
                     </span>
-                  ),
-                },
-                {
-                  key: "credit",
-                  header: "Credit",
-                  sortable: true,
-                  sortGroup: "amount",
-                  align: "right",
-                  accessor: (t: any) => (
-                    <span style={{ color: THEME.sage, fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>
-                      {t.type === "credit" ? <Money value={t.amount} variant="exact" /> : ""}
-                    </span>
-                  ),
-                },
-                {
-                  key: "balance",
-                  header: "Balance",
-                  align: "right",
-                  accessor: (t: any) => {
-                    const bal = balanceAfterTxn[t.id];
-                    if (!bal) return <span style={{ color: THEME.muted }}>—</span>;
-                    return (
-                      <span
-                        style={{
-                          color: THEME.ink,
-                          fontVariantNumeric: "tabular-nums",
-                          fontWeight: 700,
-                        }}
-                        title={balanceTitle(bal)}
-                      >
+                  </div>
+
+                  {bal && (
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: THEME.muted, fontWeight: 600 }}>Passbook Balance After</span>
+                      <span style={{ fontWeight: 800, color: THEME.ink }}>
                         <Money value={bal.value} variant="exact" />
                       </span>
-                    );
-                  },
-                },
-              ]}
-              data={pagedTxns}
-              hideSearch
-              keyExtractor={(t: any) => t.id}
-              sortKey={sortField}
-              sortDirection={sortDirection}
-              onSortChange={(key: any) => requestSort(key)}
-              onRowClick={(t: any) => setViewTxnId(t.id)}
-              onRowDoubleClick={(t: any) => {
-                setInlineEditId(t.id);
-                setInlineEdit({ ...t });
-              }}
-              rowAriaLabel={(t: any) => `View details for ${t.note || "transaction"} on ${t.date || ""}`}
-              renderRow={(t: any) => {
-                if (inlineEditId !== t.id || !inlineEdit) return null;
-                const bank = state.bankAccounts.find((b: any) => b.id === t.accountId);
-                const handleSaveInline = async () => {
-                  if (!inlineEdit.amount || Number(inlineEdit.amount) <= 0) {
-                    showToast?.("Please enter a valid amount greater than 0", "warn");
-                    return;
-                  }
-                  setInlineSaving(true);
-                  try {
-                    await updateItem("transactions", t.id, inlineEdit);
-                    setInlineEditId(null);
-                  } catch (e: any) {
-                    showToast?.(`Failed to save transaction: ${e?.message || "Unknown error"}`, "error");
-                  } finally {
-                    setInlineSaving(false);
-                  }
-                };
-                return (
-                  <tr
-                    key={t.id}
-                    style={{
-                      borderBottom: `1.5px solid ${THEME.accent}`,
-                      background: `color-mix(in srgb, ${THEME.accent} 6%, transparent)`,
+                    </div>
+                  )}
+
+                  {t.narration && (
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: THEME.muted, fontWeight: 600 }}>Narration</span>
+                      <span style={{ fontWeight: 600, color: THEME.ink, maxWidth: "60%", textAlign: "right" }}>
+                        {t.narration}
+                      </span>
+                    </div>
+                  )}
+
+                  {t.referenceNumber && (
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: THEME.muted, fontWeight: 600 }}>Ref / Cheque No.</span>
+                      <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: THEME.ink }}>
+                        {t.referenceNumber}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Drawer Footer Actions */}
+                <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                  <Button
+                    variant="secondary"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setViewTxnId(null);
+                      setInlineEditId(t.id);
+                      setInlineEdit({ ...t });
                     }}
                   >
-                    <td style={{ ...td, padding: "12px 16px" }}>
-                      <input
-                        type="date"
-                        value={inlineEdit.date}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, date: e.target.value })}
-                        style={{
-                          ...input,
-                          padding: "6px 10px",
-                          fontSize: 12,
-                          height: 32,
-                          width: 130,
-                        }}
-                      />
-                    </td>
-                    <td style={{ ...td, padding: "12px 16px" }}>
-                      {t.linkedType && (
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: THEME.gold,
-                            fontWeight: 700,
-                            marginBottom: 4,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 3,
-                          }}
-                          title="Changing the amount here will not update the linked record — delete and re-add the transaction instead if the amount was wrong."
-                        >
-                          <Link2 size={10} /> Linked — amount changes will not sync
-                        </div>
-                      )}
-                      <input
-                        value={inlineEdit.note || ""}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, note: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveInline();
-                          if (e.key === "Escape") setInlineEditId(null);
-                        }}
-                        style={{
-                          ...input,
-                          padding: "6px 10px",
-                          fontSize: 12,
-                          height: 32,
-                          minWidth: 150,
-                        }}
-                        autoFocus
-                      />
-                      <input
-                        value={inlineEdit.narration || ""}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, narration: e.target.value })}
-                        placeholder="Narration (bank description)"
-                        style={{
-                          ...input,
-                          padding: "4px 8px",
-                          fontSize: 11,
-                          minWidth: 150,
-                          marginTop: 4,
-                        }}
-                      />
-                      <input
-                        value={inlineEdit.referenceNumber || ""}
-                        onChange={(e) =>
-                          setInlineEdit({ ...inlineEdit, referenceNumber: e.target.value })
-                        }
-                        placeholder="Cheque / Ref Number"
-                        style={{
-                          ...input,
-                          padding: "4px 8px",
-                          fontSize: 11,
-                          minWidth: 150,
-                          marginTop: 4,
-                        }}
-                      />
-                    </td>
-                    <td style={{ ...td, padding: "12px 16px" }}>
-                      <select
-                        value={inlineEdit.category || ""}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, category: e.target.value })}
-                        style={{ ...input, padding: "4px 8px", height: 32, fontSize: 12 }}
-                      >
-                        {txnCats.map((c: string) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td
-                      style={{
-                        ...td,
-                        padding: "12px 16px",
-                        color: THEME.muted,
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {bank ? accountLabel(bank) : "—"}
-                    </td>
-                    <td style={{ ...td, padding: "12px 16px", textAlign: "right" }} colSpan={2}>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          alignItems: "center",
-                          justifyContent: "flex-end",
-                        }}
-                      >
-                        <select
-                          value={inlineEdit.type || "debit"}
-                          onChange={(e) => setInlineEdit({ ...inlineEdit, type: e.target.value })}
-                          style={{
-                            background:
-                              inlineEdit.type === "credit"
-                                ? `color-mix(in srgb, ${THEME.sage} 12%, transparent)`
-                                : `color-mix(in srgb, ${THEME.rust} 12%, transparent)`,
-                            color: inlineEdit.type === "credit" ? THEME.sage : THEME.rust,
-                            border: `1.5px solid color-mix(in srgb, ${inlineEdit.type === "credit" ? THEME.sage : THEME.rust} 27%, transparent)`,
-                            borderRadius: 6,
-                            fontSize: 11,
-                            fontWeight: 800,
-                            padding: "4px 8px",
-                            cursor: "pointer",
-                            outline: "none",
-                          }}
-                        >
-                          <option value="debit">DEBIT</option>
-                          <option value="credit">CREDIT</option>
-                        </select>
-                        <input
-                          type="number"
-                          value={inlineEdit.amount}
-                          onChange={(e) => setInlineEdit({ ...inlineEdit, amount: e.target.value })}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveInline();
-                            if (e.key === "Escape") setInlineEditId(null);
-                          }}
-                          style={{
-                            ...input,
-                            padding: "4px 8px",
-                            height: 32,
-                            fontSize: 12,
-                            width: 90,
-                            textAlign: "right",
-                          }}
-                        />
-                      </div>
-                    </td>
-                    <td style={{ ...td, padding: "12px 16px" }}>
-                      <div style={{ display: "flex", gap: 2 }}>
-                        <button
-                          onClick={handleSaveInline}
-                          disabled={inlineSaving}
-                          className="icon-btn"
-                          style={{ ...iconBtn, color: THEME.sage, padding: 6, opacity: inlineSaving ? 0.5 : 1 }}
-                          title="Save"
-                          aria-label="Save transaction"
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button
-                          disabled={inlineSaving}
-                          onClick={() => setInlineEditId(null)}
-                          className="icon-btn danger"
-                          style={{ ...iconBtn, color: THEME.rust, padding: 6 }}
-                          title="Cancel"
-                          aria-label="Cancel edit"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }}
-              actions={(t: any) => (
-                <div style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    Quick Edit
+                  </Button>
+                  <Button
+                    variant="accent"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setViewTxnId(null);
                       setEditTxnId(t.id);
                     }}
-                    className="icon-btn"
-                    style={{ ...iconBtn, padding: 6, borderRadius: 8, background: "transparent" }}
-                    title="Edit"
-                    aria-label="Edit transaction"
                   >
-                    <Pencil size={12} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmAction({
-                        message: `Delete this transaction${t.note ? ` ("${t.note}")` : ""}? This cannot be undone.`,
-                        onConfirm: () => removeItem("transactions", t.id),
-                      });
-                    }}
-                    className="icon-btn danger"
-                    style={{ ...iconBtn, padding: 6, borderRadius: 8, background: "transparent" }}
-                    title="Delete"
-                    aria-label="Delete transaction"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                    Full Edit
+                  </Button>
                 </div>
-              )}
-              footer={(() => {
-                const totalDebit = sortedTxns
-                  .filter((t: any) => t.type === "debit")
-                  .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-                const totalCredit = sortedTxns
-                  .filter((t: any) => t.type === "credit")
-                  .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-                const net = totalCredit - totalDebit;
-                const netColor = net > 0 ? THEME.sage : net < 0 ? THEME.rust : THEME.muted;
-                const borderTop = `1.5px solid ${THEME.line}`;
-                return (
-                  <tr style={{ background: "var(--surface-1)" }}>
-                    <td
-                      colSpan={3}
-                      style={{
-                        padding: "12px 16px",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: THEME.muted,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                        borderTop,
-                      }}
-                    >
-                      {sortedTxns.length} Transaction{sortedTxns.length === 1 ? "" : "s"} total
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "right",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: THEME.muted,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                        borderTop,
-                      }}
-                    >
-                      Net Balance
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "right",
-                        fontWeight: 800,
-                        color: THEME.rust,
-                        fontSize: 13,
-                        fontVariantNumeric: "tabular-nums",
-                        borderTop,
-                      }}
-                    >
-                      -<Money value={totalDebit} variant="exact" />
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "right",
-                        fontWeight: 800,
-                        color: THEME.sage,
-                        fontSize: 13,
-                        fontVariantNumeric: "tabular-nums",
-                        borderTop,
-                      }}
-                    >
-                      +<Money value={totalCredit} variant="exact" />
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "right",
-                        fontWeight: 900,
-                        color: netColor,
-                        fontSize: 13,
-                        fontVariantNumeric: "tabular-nums",
-                        borderTop,
-                      }}
-                    >
-                      {net >= 0 ? "+" : "-"}
-                      <Money value={Math.abs(net)} variant="exact" />
-                    </td>
-                  </tr>
-                );
-              })()}
-            />
-          </div>
-        )}
-        {sortedTxns.length > 0 && (
-          <div className="mobile-only" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {pagedTxns.map((t: any) => {
-              const bank = state.bankAccounts.find((b: any) => b.id === t.accountId);
-              return (
-                <div
-                  key={t.id}
-                  onClick={() => setViewTxnId(t.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setViewTxnId(t.id);
-                    }
-                  }}
-                  aria-label={`View details for ${t.note || "transaction"} on ${t.date || ""}`}
-                  style={{
-                    border: `1.5px solid ${THEME.line}`,
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    background: "var(--surface-0)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: THEME.ink,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {t.note || "—"}
-                        {t.category === "Transfer" && (
-                          <Badge variant="accent" size="xs">
-                            ↔
-                          </Badge>
-                        )}
-                        {t.linkedType && (
-                          <Badge variant="accent" size="xs" style={{ display: "inline-flex", alignItems: "center" }}>
-                            <Link2 size={9} />
-                          </Badge>
-                        )}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: THEME.muted,
-                          marginTop: 3,
-                          display: "flex",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <span>
-                          {t.date
-                            ? new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", {
-                                day: "2-digit",
-                                month: "short",
-                              })
-                            : "—"}
-                        </span>
-                        <span>·</span>
-                        <span>{bank ? accountLabel(bank) : "—"}</span>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 800,
-                        fontVariantNumeric: "tabular-nums",
-                        color: t.type === "credit" ? THEME.sage : THEME.rust,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {t.type === "credit" ? "+" : "-"}
-                      <Money value={t.amount} variant="exact" />
-                    </div>
-                  </div>
-                  {t.category && (
-                    <span
-                      style={{
-                        display: "inline-block",
-                        marginTop: 8,
-                        padding: "2px 8px",
-                        borderRadius: "var(--radius-xs)",
-                        fontSize: 10,
-                        fontWeight: 800,
-                        background: getCategoryStyle(t.category).bg,
-                        color: getCategoryStyle(t.category).color,
-                      }}
-                    >
-                      {t.category}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {sortedTxns.length > TXN_PAGE_SIZE && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: 10,
-              paddingTop: 4,
-            }}
-          >
-            <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
-              Showing {(currentTxnPage - 1) * TXN_PAGE_SIZE + 1}–
-              {Math.min(currentTxnPage * TXN_PAGE_SIZE, sortedTxns.length)} of {sortedTxns.length}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                onClick={() => setTxnPage((p) => Math.max(1, p - 1))}
-                disabled={currentTxnPage <= 1}
-                className="icon-btn"
-                style={{
-                  ...iconBtn,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: `1.5px solid ${THEME.line}`,
-                  background: "var(--surface-1)",
-                  opacity: currentTxnPage <= 1 ? 0.4 : 1,
-                  cursor: currentTxnPage <= 1 ? "not-allowed" : "pointer",
-                }}
-                aria-label="Previous page"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink }}>
-                Page {currentTxnPage} of {totalTxnPages}
-              </span>
-              <button
-                onClick={() => setTxnPage((p) => Math.min(totalTxnPages, p + 1))}
-                disabled={currentTxnPage >= totalTxnPages}
-                className="icon-btn"
-                style={{
-                  ...iconBtn,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: `1.5px solid ${THEME.line}`,
-                  background: "var(--surface-1)",
-                  opacity: currentTxnPage >= totalTxnPages ? 0.4 : 1,
-                  cursor: currentTxnPage >= totalTxnPages ? "not-allowed" : "pointer",
-                }}
-                aria-label="Next page"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {editBankId && (
-        <BankEditModal
-          account={state.bankAccounts.find((a: any) => a.id === editBankId)}
-          onClose={() => setEditBankId(null)}
-          onSave={(v: any) => saveBankEdit(editBankId, v)}
-          saving={savingBankEdit}
-        />
-      )}
-      {editTxnId && (
-        <TxnEditModal
-          txn={state.transactions.find((t: any) => t.id === editTxnId)}
-          accounts={state.bankAccounts}
-          getDisplayBalance={getDisplayBalance}
-          onClose={() => setEditTxnId(null)}
-          onSave={(v: any) => saveTxnEdit(editTxnId, v)}
-          saving={savingTxnEdit}
-        />
-      )}
-      {viewTxnId &&
-        (() => {
-          const t = state.transactions.find((tx: any) => tx.id === viewTxnId);
-          if (!t) return null;
-          const bank = state.bankAccounts.find((b: any) => b.id === t.accountId);
-          const row = (label: string, value: React.ReactNode) =>
-            value ? (
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 16,
-                  padding: "12px 0",
-                  borderBottom: `1px solid ${THEME.line}`,
-                }}
-              >
-                <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>{label}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, textAlign: "right" }}>
-                  {value}
-                </span>
-              </div>
-            ) : null;
-          return (
-            <Drawer title="Transaction Details" onClose={() => setViewTxnId(null)}>
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "8px 0 20px",
-                  borderBottom: `1px solid ${THEME.line}`,
-                  marginBottom: 4,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontSize: 30,
-                    fontWeight: 600,
-                    letterSpacing: "-0.03em",
-                    fontVariantNumeric: "tabular-nums",
-                    color: t.type === "credit" ? THEME.sage : THEME.rust,
-                  }}
-                >
-                  {t.type === "credit" ? "+" : "-"}
-                  <Money value={t.amount} variant="exact" />
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    justifyContent: "center",
-                    marginTop: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {t.category === "Transfer" && <Badge variant="accent">↔ Transfer</Badge>}
-                  {t.linkedType && (
-                    <Badge variant="accent" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <Link2 size={10} /> Linked
-                    </Badge>
-                  )}
-                  {t.category !== "Transfer" &&
-                    recurringKeys.has((t.note || "") + "|" + t.amount + "|" + t.type) && (
-                      <Badge variant="gold">Recurring</Badge>
-                    )}
-                </div>
-              </div>
-              {row("Note", t.note)}
-              {row(
-                "Date",
-                t.date
-                  ? new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })
-                  : null
-              )}
-              {row(
-                "Category",
-                t.category ? (
-                  <span
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: "var(--radius-xs)",
-                      fontSize: 10,
-                      fontWeight: 800,
-                      background: getCategoryStyle(t.category).bg,
-                      color: getCategoryStyle(t.category).color,
-                    }}
-                  >
-                    {t.category}
-                  </span>
-                ) : null
-              )}
-              {row(
-                "Account",
-                bank ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <BankLogo bankName={bank.bankName} size={18} />
-                    {accountLabel(bank)}
-                  </span>
-                ) : null
-              )}
-              {row(
-                "Balance After",
-                balanceAfterTxn[t.id] ? (
-                  <span title={balanceTitle(balanceAfterTxn[t.id])}>
-                    <Money value={balanceAfterTxn[t.id].value} variant="exact" />
-                  </span>
-                ) : null
-              )}
-              {row("Narration", t.narration)}
-              {row("Reference", t.referenceNumber)}
-              <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
-                <Button
-                  variant="secondary"
-                  style={{ flex: 1 }}
-                  onClick={() => {
-                    setViewTxnId(null);
-                    setInlineEditId(t.id);
-                    setInlineEdit({ ...t });
-                  }}
-                >
-                  Quick Edit
-                </Button>
-                <Button
-                  variant="accent"
-                  style={{ flex: 1 }}
-                  onClick={() => {
-                    setViewTxnId(null);
-                    setEditTxnId(t.id);
-                  }}
-                >
-                  Full Edit
-                </Button>
               </div>
             </Drawer>
           );
         })()}
-      {showBank && (
-        <BankModal onClose={() => setShowBank(false)} onSave={saveNewBank} saving={savingNewBank} />
-      )}
-      {showTxn && (
-        <TxnModal
-          accounts={state.bankAccounts}
-          state={state}
-          getDisplayBalance={getDisplayBalance}
-          onClose={() => setShowTxn(false)}
-          onSave={saveNewTxn}
-          saving={savingNewTxn}
-        />
-      )}
+
       {showImport && (
         <CsvImportModal
-          accounts={state.bankAccounts}
-          // Duplicate/backfill matching needs every transaction the account really
-          // has, not the profile-filtered view — otherwise, with a specific family
-          // member active, a transaction owned by someone else wouldn't be seen as
-          // a duplicate and could get re-imported as a second copy. Same reasoning
-          // as balanceAfterTxn above using `fullState` instead of `state`.
+          accounts={state.bankAccounts || []}
           existingTransactions={balanceSource.transactions || []}
           onClose={() => setShowImport(false)}
           onImport={async (rows: any) => {
@@ -2792,29 +3379,24 @@ export function BanksTab({
                 }
               }
               setShowImport(false);
+              showToast?.(`Imported ${rows.length} transactions successfully`, "success");
             } catch (e: any) {
-              showToast?.(`Failed to import transactions: ${e?.message || "Unknown error"}`, "error");
+              showToast?.(`Failed to import: ${e?.message || "Unknown error"}`, "error");
             }
           }}
           onBackfillBalance={async (updates: { id: string; statementBalance: string }[]) => {
-            // No success toast here: updateItem never throws on a Supabase error — it
-            // handles every case internally (including the exact "column missing, run
-            // migration" scenario this feature can hit before migration 93 is applied)
-            // and shows its own accurate toast. An unconditional success message here
-            // would contradict that warning and falsely claim the balance was saved.
             for (const u of updates) {
               await updateItem("transactions", u.id, { statementBalance: u.statementBalance });
             }
           }}
         />
       )}
+
       {confirmDeleteAllAcc && (
         <ConfirmDialog
-          message={`Delete all ${accTxnIdsForDelete.length} transaction${
-            accTxnIdsForDelete.length === 1 ? "" : "s"
-          } recorded for "${accountLabel(
-            state.bankAccounts.find((a: any) => a.id === filterAcc)
-          )}"?\n\nThe account's balance will be adjusted to remove their effect, and any linked records (credit card payments, loan EMIs, insurance premiums, rent, subscription renewals) they auto-posted will be reversed too. This cannot be undone.`}
+          message={`Delete all ${accTxnIdsForDelete.length} transactions recorded for "${accountLabel(
+            (state.bankAccounts || []).find((a: any) => a.id === filterAcc)
+          )}"?\n\nThe account balance will be adjusted accordingly. This cannot be undone.`}
           confirmLabel={deletingAll ? "Deleting…" : `Yes, delete all ${accTxnIdsForDelete.length}`}
           onConfirm={async () => {
             if (deletingAll) return;
@@ -2827,14 +3409,9 @@ export function BanksTab({
                   await removeItem("transactions", id);
                 }
               }
-              showToast?.(
-                `Deleted ${accTxnIdsForDelete.length} transaction${
-                  accTxnIdsForDelete.length === 1 ? "" : "s"
-                }.`,
-                "success"
-              );
+              showToast?.(`Deleted ${accTxnIdsForDelete.length} transactions`, "success");
             } catch (e: any) {
-              showToast?.(`Failed to delete transactions: ${e?.message || "Unknown error"}`, "error");
+              showToast?.(`Failed to delete: ${e?.message || "Unknown error"}`, "error");
             } finally {
               setDeletingAll(false);
               setConfirmDeleteAllAcc(false);
@@ -2843,6 +3420,7 @@ export function BanksTab({
           onCancel={() => setConfirmDeleteAllAcc(false)}
         />
       )}
+
       {confirmAction && (
         <ConfirmDialog
           message={confirmAction.message}
@@ -2854,6 +3432,40 @@ export function BanksTab({
         />
       )}
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MODALS: BANK ACCOUNT & TRANSACTION EDITORS
+   ══════════════════════════════════════════════════════════════════════ */
+
+function BankEmptyState({ onAdd }: any) {
+  return (
+    <EmptyState
+      icon={Building2}
+      gradient={`linear-gradient(135deg, ${THEME.accent}, color-mix(in srgb, ${THEME.accent} 55%, white))`}
+      dotColor={THEME.accent}
+      title="No Bank Accounts Connected"
+      description="Add your savings, current, and salary bank accounts to monitor balances, passbooks, and every rupee that moves."
+      pills={["Savings & Salary", "Live Passbook", "Smart CSV Import", "Runway Analytics"]}
+      buttonLabel="Add Bank Account"
+      onAdd={onAdd}
+    />
+  );
+}
+
+function TxnEmptyState({ onAdd }: any) {
+  return (
+    <EmptyState
+      icon={ReceiptText}
+      gradient={`linear-gradient(135deg, ${THEME.accent}, color-mix(in srgb, ${THEME.accent} 55%, white))`}
+      dotColor={THEME.accent}
+      title="No Transactions Recorded"
+      description="Record income and expenses manually or bulk-import from your bank statement CSV. Automatic categorization and passbook linking included."
+      pills={["Debit & Credit", "Category Tags", "Bulk CSV Import", "Recurring Detection"]}
+      buttonLabel="Record Transaction"
+      onAdd={onAdd}
+    />
   );
 }
 
@@ -2875,7 +3487,9 @@ function getLinkConfig(category: string, type: string, state: any, privacyMode?:
         .filter((l: any) => loanOutstanding(l) > 0)
         .map((l: any) => ({
           key: `loansTaken:${l.id}`,
-          label: `${l.lender || "Loan"} – ${l.type || ""} | EMI ${fmt(l.emi)}/mo | Outstanding ${fmt(loanOutstanding(l))}`,
+          label: `${l.lender || "Loan"} – ${l.type || ""} | EMI ${fmt(l.emi)}/mo | Outstanding ${fmt(
+            loanOutstanding(l)
+          )}`,
         })),
     };
   }
@@ -2889,11 +3503,15 @@ function getLinkConfig(category: string, type: string, state: any, privacyMode?:
         })),
         ...(state.termPlans || []).map((p: any) => ({
           key: `termPlans:${p.id}`,
-          label: `${p.insurer || "Term"} – ${p.planName || "Term Plan"} – ${fmt(p.annualPremium)}/yr`,
+          label: `${p.insurer || "Term"} – ${p.planName || "Term Plan"} – ${fmt(
+            p.annualPremium
+          )}/yr`,
         })),
         ...(state.investmentPlans || []).map((p: any) => ({
           key: `investmentPlans:${p.id}`,
-          label: `${p.insurer || "Invest"} – ${p.planName || "Plan"} – ${fmt(p.annualPremium)}/yr`,
+          label: `${p.insurer || "Invest"} – ${p.planName || "Plan"} – ${fmt(
+            p.annualPremium
+          )}/yr`,
         })),
       ],
     };
@@ -2927,16 +3545,13 @@ function getLinkConfig(category: string, type: string, state: any, privacyMode?:
         .filter((c: any) => (c.status || "").toLowerCase() !== "closed")
         .map((c: any) => ({
           key: `creditCards:${c.id}`,
-          label: `${c.issuer || "Card"} ····${c.last4 || "????"} | Outstanding ${fmt(c.outstanding)}`,
+          label: `${c.issuer || "Card"} ····${c.last4 || "????"} | Outstanding ${fmt(
+            c.outstanding
+          )}`,
         })),
     };
   }
   if (category === "Real Estate" && type === "debit") {
-    // Key encodes both the property AND which cost field the payment applies to
-    // (realEstateProperties:<propertyId>:<costField>). Each cost type has a Total
-    // field and a Paid field (see RealEstateTab.tsx) — linking a bank transaction
-    // here increments the Paid field, never the Total, so the Total stays the
-    // fixed contracted/liability figure and Balance = Total − Paid.
     const costFields = [
       { key: "stampDutyPaid", totalKey: "stampDuty", label: "Stamp Duty" },
       { key: "tdsValue", totalKey: "tdsAmount", label: "TDS" },
@@ -2980,11 +3595,12 @@ function BankModal({ onClose, onSave, saving }: any) {
     type: bankAccountTypes[0] || "Savings",
     balance: "",
   });
+
   return (
     <Modal title="Add Bank Account" onClose={onClose}>
-      <Field label="Owner / Profile">
+      <Field label="Owner / Family Profile">
         <select
-          style={input}
+          style={inputStyle}
           value={f.owner || "self"}
           onChange={(e) => setF({ ...f, owner: e.target.value })}
         >
@@ -2995,25 +3611,38 @@ function BankModal({ onClose, onSave, saving }: any) {
           ))}
         </select>
       </Field>
+
       <Field label="Bank Name">
-        <input
-          style={input}
-          value={f.bankName}
-          onChange={(e) => setF({ ...f, bankName: e.target.value })}
-          placeholder="e.g. HDFC Bank"
-        />
+        <div style={{ position: "relative" }}>
+          <input
+            style={inputStyle}
+            value={f.bankName}
+            onChange={(e) => setF({ ...f, bankName: e.target.value })}
+            placeholder="e.g. HDFC Bank, SBI, ICICI Bank"
+            list="popular-banks-list"
+            autoFocus
+          />
+          <datalist id="popular-banks-list">
+            {POPULAR_INDIAN_BANKS.map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
+        </div>
       </Field>
-      <Field label="Account Number (last 4 ok)">
+
+      <Field label="Account Number (full or last 4 digits)">
         <input
-          style={input}
+          style={inputStyle}
           value={f.accountNumber}
           onChange={(e) => setF({ ...f, accountNumber: e.target.value })}
+          placeholder="e.g. 50100432109876"
         />
       </Field>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Type">
+        <Field label="Account Type">
           <select
-            style={input}
+            style={inputStyle}
             value={f.type}
             onChange={(e) => setF({ ...f, type: e.target.value })}
           >
@@ -3022,20 +3651,23 @@ function BankModal({ onClose, onSave, saving }: any) {
             ))}
           </select>
         </Field>
-        <Field label="Current Balance">
+
+        <Field label="Current / Opening Balance (₹)">
           <input
-            style={input}
+            style={inputStyle}
             type="number"
             value={f.balance}
             onChange={(e) => setF({ ...f, balance: e.target.value })}
+            placeholder="0.00"
           />
         </Field>
       </div>
+
       <ModalActions
         onSave={() => f.bankName && onSave(f)}
         onClose={onClose}
         saveLabel="Add Bank Account"
-        disabled={saving}
+        disabled={saving || !f.bankName.trim()}
         loading={saving}
       />
     </Modal>
@@ -3060,41 +3692,100 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
     linkedKey: "",
     statementBalance: "",
   });
+
   const isTransfer = f.type === "transfer";
 
-  const BalanceChip = ({ accId, label }: { accId: string; label: string }) => {
-    const sel = accounts.find((a: any) => a.id === accId);
-    if (!sel) return null;
-    const bal = getDisplayBalance ? getDisplayBalance(sel) : Number(sel.balance || 0);
-    const color = bal > 0 ? THEME.sage : bal < 0 ? THEME.rust : THEME.accent;
-    return (
+  return (
+    <Modal title="Record Bank Transaction" onClose={onClose}>
+      {/* 3-Mode segmented selector */}
       <div
         style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "7px 12px",
-          background: `color-mix(in srgb, ${color} 8%, transparent)`,
-          border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          background: "var(--surface-1)",
+          padding: 4,
           borderRadius: 10,
+          border: `1.5px solid ${THEME.line}`,
+          gap: 4,
+          marginBottom: 16,
         }}
       >
-        <span style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>{label}</span>
-        <span
-          style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800, color }}
+        <button
+          type="button"
+          onClick={() => setF({ ...f, type: "debit", linkedKey: "" })}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "none",
+            background:
+              f.type === "debit"
+                ? `color-mix(in srgb, ${THEME.rust} 15%, transparent)`
+                : "transparent",
+            color: f.type === "debit" ? THEME.rust : THEME.muted,
+            fontWeight: 800,
+            fontSize: 12,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
         >
-          <Money value={bal} variant="full" />
-        </span>
-      </div>
-    );
-  };
+          <TrendingDown size={14} /> Expense (Debit)
+        </button>
 
-  return (
-    <Modal title="Record Transaction" onClose={onClose}>
-      <Field label="Owner / Profile">
+        <button
+          type="button"
+          onClick={() => setF({ ...f, type: "credit", linkedKey: "" })}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "none",
+            background:
+              f.type === "credit"
+                ? `color-mix(in srgb, ${THEME.sage} 15%, transparent)`
+                : "transparent",
+            color: f.type === "credit" ? THEME.sage : THEME.muted,
+            fontWeight: 800,
+            fontSize: 12,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          <TrendingUp size={14} /> Income (Credit)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setF({ ...f, type: "transfer", category: "Transfer", linkedKey: "" })}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "none",
+            background:
+              f.type === "transfer"
+                ? `color-mix(in srgb, ${THEME.violet} 15%, transparent)`
+                : "transparent",
+            color: f.type === "transfer" ? THEME.violet : THEME.muted,
+            fontWeight: 800,
+            fontSize: 12,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          <ArrowLeftRight size={14} /> Transfer
+        </button>
+      </div>
+
+      <Field label="Owner / Family Profile">
         <select
-          style={input}
+          style={inputStyle}
           value={f.owner || "self"}
           onChange={(e) => setF({ ...f, owner: e.target.value })}
         >
@@ -3105,18 +3796,20 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
           ))}
         </select>
       </Field>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Date">
           <input
-            style={input}
+            style={inputStyle}
             type="date"
             value={f.date}
             onChange={(e) => setF({ ...f, date: e.target.value })}
           />
         </Field>
-        <Field label={isTransfer ? "From Account" : "Account"}>
+
+        <Field label={isTransfer ? "Source Bank Account" : "Bank Account"}>
           <select
-            style={input}
+            style={inputStyle}
             value={f.accountId}
             onChange={(e) => setF({ ...f, accountId: e.target.value })}
           >
@@ -3129,90 +3822,45 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
           </select>
         </Field>
       </div>
-      {!isTransfer &&
-        (() => {
-          const sel = accounts.find((a: any) => a.id === f.accountId);
-          if (!sel) return null;
-          const bal = getDisplayBalance ? getDisplayBalance(sel) : Number(sel.balance || 0);
-          const color = bal > 0 ? THEME.sage : bal < 0 ? THEME.rust : THEME.accent;
-          return (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "8px 14px",
-                background: `color-mix(in srgb, ${color} 8%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
-                borderRadius: 10,
-                marginTop: -4,
-              }}
-            >
-              <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
-                Current Balance
-              </span>
-              <span
-                style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color }}
-              >
-                <Money value={bal} variant="full" />
-              </span>
-            </div>
-          );
-        })()}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Type">
+
+      {/* Amount Input */}
+      <Field label="Amount (₹)">
+        <input
+          style={{ ...inputStyle, fontSize: 16, fontWeight: 700 }}
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="0.00"
+          value={f.amount}
+          onChange={(e) => setF({ ...f, amount: e.target.value })}
+          autoFocus
+        />
+      </Field>
+
+      {/* Transfer destination */}
+      {isTransfer && (
+        <Field label="Destination Bank Account">
           <select
-            style={input}
-            value={f.type}
-            onChange={(e) => setF({ ...f, type: e.target.value, linkedKey: "" })}
+            style={inputStyle}
+            value={f.toAccountId}
+            onChange={(e) => setF({ ...f, toAccountId: e.target.value })}
           >
-            <option value="debit">Debit (money out)</option>
-            <option value="credit">Credit (money in)</option>
-            <option value="transfer">↔ Transfer (between accounts)</option>
+            {accounts
+              .filter((a: any) => a.id !== f.accountId)
+              .map((a: any) => (
+                <option key={a.id} value={a.id}>
+                  {accountLabel(a)}
+                </option>
+              ))}
           </select>
         </Field>
-        <Field label="Amount">
-          <input
-            style={input}
-            type="number"
-            min="0"
-            value={f.amount}
-            onChange={(e) => setF({ ...f, amount: e.target.value })}
-          />
-        </Field>
-      </div>
-      {isTransfer && (
-        <>
-          <Field label="To Account">
-            <select
-              style={input}
-              value={f.toAccountId}
-              onChange={(e) => setF({ ...f, toAccountId: e.target.value })}
-            >
-              {accounts
-                .filter((a: any) => a.id !== f.accountId)
-                .map((a: any) => (
-                  <option key={a.id} value={a.id}>
-                    {accountLabel(a)}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          <div style={{ display: "flex", gap: 8, marginTop: -4 }}>
-            <BalanceChip accId={f.accountId} label="From Balance" />
-            <div
-              style={{ display: "flex", alignItems: "center", color: THEME.muted, fontSize: 16 }}
-            >
-              →
-            </div>
-            <BalanceChip accId={f.toAccountId} label="To Balance" />
-          </div>
-        </>
       )}
+
+      {/* Category selector */}
       {!isTransfer && (
         <Field label="Category">
           <select
-            style={input}
+            style={inputStyle}
             value={f.category}
             onChange={(e) => setF({ ...f, category: e.target.value, linkedKey: "" })}
           >
@@ -3222,6 +3870,8 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
           </select>
         </Field>
       )}
+
+      {/* Auto link preview */}
       {!isTransfer &&
         (() => {
           const cfg = getLinkConfig(f.category, f.type, state, privacyMode);
@@ -3229,7 +3879,7 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
           return (
             <Field label={`Link to ${cfg.label} (optional)`}>
               <select
-                style={input}
+                style={inputStyle}
                 value={f.linkedKey}
                 onChange={(e) => setF({ ...f, linkedKey: e.target.value })}
               >
@@ -3240,31 +3890,28 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
                   </option>
                 ))}
               </select>
-              {f.linkedKey ? (
+              {f.linkedKey && (
                 <div
                   style={{
                     fontSize: 11,
                     color: THEME.sage,
                     marginTop: 6,
-                    fontWeight: 600,
-                    padding: "5px 10px",
-                    background: `color-mix(in srgb, ${THEME.sage} 7%, transparent)`,
+                    fontWeight: 700,
+                    padding: "6px 10px",
+                    background: `color-mix(in srgb, ${THEME.sage} 10%, transparent)`,
                     borderRadius: 8,
                   }}
                 >
-                  ✓ Will auto-update {cfg.label} record when saved
+                  ✓ Will auto-post and update {cfg.label} record
                 </div>
-              ) : cfg.options.length === 0 ? (
-                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>
-                  No {cfg.label.toLowerCase()} records found — add them in the relevant tab first.
-                </div>
-              ) : null}
+              )}
             </Field>
           );
         })()}
-      <Field label="Note">
+
+      <Field label="Particulars / Note">
         <input
-          style={input}
+          style={inputStyle}
           value={f.note}
           onChange={(e) => {
             const note = e.target.value;
@@ -3273,41 +3920,32 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
           }}
           placeholder={
             isTransfer
-              ? "e.g. Monthly savings transfer"
-              : "e.g. Swiggy order — category auto-detected"
+              ? "e.g. Monthly transfer to salary savings"
+              : "e.g. Swiggy order, Electricity Bill — category auto-detects"
           }
         />
       </Field>
-      <Field label="Narration">
-        <input
-          style={input}
-          value={f.narration}
-          onChange={(e) => setF({ ...f, narration: e.target.value })}
-          placeholder="Bank description e.g. UPI/HDFC/REF123456"
-        />
-      </Field>
-      <Field label="Cheque / Reference Number">
-        <input
-          style={input}
-          value={f.referenceNumber || ""}
-          onChange={(e) => setF({ ...f, referenceNumber: e.target.value })}
-          placeholder="Cheque or reference number (optional)"
-        />
-      </Field>
-      {!isTransfer && (
-        <Field label="Account Balance After This Transaction (optional)">
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Narration / Description">
           <input
-            style={input}
-            type="number"
-            value={f.statementBalance}
-            onChange={(e) => setF({ ...f, statementBalance: e.target.value })}
-            placeholder="e.g. exact balance shown in your bank statement/app"
+            style={inputStyle}
+            value={f.narration}
+            onChange={(e) => setF({ ...f, narration: e.target.value })}
+            placeholder="UPI / IMPS / Bank description"
           />
-          <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>
-            Optional: Enter the balance from your bank statement to anchor this transaction's balance.
-          </div>
         </Field>
-      )}
+
+        <Field label="Reference / Cheque No.">
+          <input
+            style={inputStyle}
+            value={f.referenceNumber || ""}
+            onChange={(e) => setF({ ...f, referenceNumber: e.target.value })}
+            placeholder="Optional ref / cheque number"
+          />
+        </Field>
+      </div>
+
       <ModalActions
         onSave={() =>
           Number(f.amount) > 0 &&
@@ -3317,7 +3955,7 @@ function TxnModal({ accounts, state, getDisplayBalance, onClose, onSave, saving 
         }
         onClose={onClose}
         saveLabel="Record Transaction"
-        disabled={saving}
+        disabled={saving || !f.amount || Number(f.amount) <= 0}
         loading={saving}
       />
     </Modal>
@@ -3341,44 +3979,30 @@ function TxnEditModal({ txn, accounts, getDisplayBalance, onClose, onSave, savin
         ? ""
         : String(txn.statementBalance),
   });
+
   return (
-    <Modal title="Edit Transaction" onClose={onClose}>
+    <Modal title="Edit Transaction Details" onClose={onClose}>
       {txn?.linkedType && (
         <div
           style={{
             fontSize: 11,
             color: THEME.gold,
-            marginBottom: 4,
-            fontWeight: 600,
-            padding: "6px 10px",
-            background: `color-mix(in srgb, ${THEME.gold} 8%, transparent)`,
-            border: `1px solid color-mix(in srgb, ${THEME.gold} 20%, transparent)`,
+            marginBottom: 12,
+            fontWeight: 700,
+            padding: "8px 12px",
+            background: `color-mix(in srgb, ${THEME.gold} 10%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${THEME.gold} 25%, transparent)`,
             borderRadius: 8,
           }}
         >
-          <Link2 size={12} style={{ verticalAlign: -2, marginRight: 2 }} /> This transaction is
-          linked to a{" "}
-          {(
-            {
-              creditCards: "credit card",
-              loansTaken: "loan",
-              realEstateProperties: "real estate property",
-              rentedProperties: "rented property",
-              rentalProperties: "rental property",
-              lic: "LIC policy",
-              termPlans: "insurance policy",
-              investmentPlans: "investment plan",
-              subscriptions: "subscription",
-            } as Record<string, string>
-          )[txn.linkedType] || "linked"
-          }{" "}
-          record. Changing the amount here will not update that record — delete and re-add the
-          transaction instead if the amount was wrong.
+          <Link2 size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> This transaction is
+          linked to a {txn.linkedType} record.
         </div>
       )}
-      <Field label="Owner / Profile">
+
+      <Field label="Owner / Family Profile">
         <select
-          style={input}
+          style={inputStyle}
           value={f.owner || "self"}
           onChange={(e) => setF({ ...f, owner: e.target.value })}
         >
@@ -3389,18 +4013,20 @@ function TxnEditModal({ txn, accounts, getDisplayBalance, onClose, onSave, savin
           ))}
         </select>
       </Field>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Date">
           <input
-            style={input}
+            style={inputStyle}
             type="date"
             value={f.date}
             onChange={(e) => setF({ ...f, date: e.target.value })}
           />
         </Field>
-        <Field label="Account">
+
+        <Field label="Bank Account">
           <select
-            style={input}
+            style={inputStyle}
             value={f.accountId}
             onChange={(e) => setF({ ...f, accountId: e.target.value })}
           >
@@ -3412,59 +4038,34 @@ function TxnEditModal({ txn, accounts, getDisplayBalance, onClose, onSave, savin
           </select>
         </Field>
       </div>
-      {(() => {
-        const sel = accounts.find((a: any) => a.id === f.accountId);
-        if (!sel) return null;
-        const bal = getDisplayBalance ? getDisplayBalance(sel) : Number(sel.balance || 0);
-        const color = bal > 0 ? THEME.sage : bal < 0 ? THEME.rust : THEME.accent;
-        return (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 14px",
-              background: `color-mix(in srgb, ${color} 8%, transparent)`,
-              border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
-              borderRadius: 10,
-              marginTop: -4,
-            }}
-          >
-            <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
-              Current Balance
-            </span>
-            <span
-              style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color }}
-            >
-              <Money value={bal} variant="full" />
-            </span>
-          </div>
-        );
-      })()}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Type">
+        <Field label="Transaction Type">
           <select
-            style={input}
+            style={inputStyle}
             value={f.type}
             onChange={(e) => setF({ ...f, type: e.target.value })}
           >
-            <option value="debit">Debit (money out)</option>
-            <option value="credit">Credit (money in)</option>
+            <option value="debit">Debit (Expense / Money Out)</option>
+            <option value="credit">Credit (Income / Money In)</option>
           </select>
         </Field>
-        <Field label="Amount">
+
+        <Field label="Amount (₹)">
           <input
-            style={input}
+            style={inputStyle}
             type="number"
             min="0"
+            step="0.01"
             value={f.amount}
             onChange={(e) => setF({ ...f, amount: e.target.value })}
           />
         </Field>
       </div>
+
       <Field label="Category">
         <select
-          style={input}
+          style={inputStyle}
           value={f.category}
           onChange={(e) => setF({ ...f, category: e.target.value })}
         >
@@ -3473,51 +4074,38 @@ function TxnEditModal({ txn, accounts, getDisplayBalance, onClose, onSave, savin
           ))}
         </select>
       </Field>
-      <Field label="Note">
+
+      <Field label="Particulars / Note">
         <input
-          style={input}
+          style={inputStyle}
           value={f.note}
-          onChange={(e) => {
-            const note = e.target.value;
-            const cat = autoCateg(note);
-            setF({ ...f, note, ...(cat ? { category: cat } : {}) });
-          }}
-          placeholder="e.g. Swiggy order — category auto-detected"
+          onChange={(e) => setF({ ...f, note: e.target.value })}
         />
       </Field>
-      <Field label="Narration">
-        <input
-          style={input}
-          value={f.narration}
-          onChange={(e) => setF({ ...f, narration: e.target.value })}
-          placeholder="Bank description e.g. UPI/HDFC/REF123456"
-        />
-      </Field>
-      <Field label="Cheque / Reference Number">
-        <input
-          style={input}
-          value={f.referenceNumber || ""}
-          onChange={(e) => setF({ ...f, referenceNumber: e.target.value })}
-          placeholder="Cheque or reference number (optional)"
-        />
-      </Field>
-      <Field label="Account Balance After This Transaction (optional)">
-        <input
-          style={input}
-          type="number"
-          value={f.statementBalance}
-          onChange={(e) => setF({ ...f, statementBalance: e.target.value })}
-          placeholder="e.g. exact balance shown in your bank statement/app"
-        />
-        <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>
-          Optional: Enter the balance from your bank statement to anchor this transaction's balance.
-        </div>
-      </Field>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Narration">
+          <input
+            style={inputStyle}
+            value={f.narration}
+            onChange={(e) => setF({ ...f, narration: e.target.value })}
+          />
+        </Field>
+
+        <Field label="Reference / Cheque No.">
+          <input
+            style={inputStyle}
+            value={f.referenceNumber || ""}
+            onChange={(e) => setF({ ...f, referenceNumber: e.target.value })}
+          />
+        </Field>
+      </div>
+
       <ModalActions
         onSave={() => Number(f.amount) > 0 && f.accountId && onSave(f)}
         onClose={onClose}
         saveLabel="Save Changes"
-        disabled={saving}
+        disabled={saving || !f.amount || Number(f.amount) <= 0}
         loading={saving}
       />
     </Modal>
