@@ -249,7 +249,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                   <Money
                     value={entry.value}
                     variant="full"
-                    showSign={entry.dataKey === "delta"}
                   />
                 )}
               </span>

@@ -1753,7 +1753,7 @@ export const CashFlowTab = ({
             </div>
 
             {isSimulationActive && (
-              <Button variant="secondary" size="sm" onClick={resetSimulation} icon={RotateCcw}>
+              <Button variant="secondary" size="sm" onClick={resetSimulation} icon={<RotateCcw size={14} />}>
                 Reset Sandbox
               </Button>
             )}
