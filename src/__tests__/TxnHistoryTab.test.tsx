@@ -175,4 +175,39 @@ describe("TxnHistoryTab Premium UI Statically", () => {
     expect(html).toContain("HDFC Top 100");
     expect(html).toContain("Redeemed");
   });
+
+  it("renders the Unified Financial Journal with consolidated entries and export actions", () => {
+    const state = {
+      stocks: [
+        {
+          id: "s-active",
+          symbol: "INFY.NS",
+          buyDate: "2026-06-10",
+          avgPrice: 1500,
+          qty: 20,
+          exchange: "NSE",
+        },
+      ],
+      stockSells: [],
+      mutualFunds: [],
+      mfSells: [],
+      transactions: [
+        {
+          id: "t1",
+          date: "2026-06-15",
+          note: "HDFC Bank Dividend",
+          category: "Dividend",
+          type: "credit",
+          amount: 4500,
+        },
+      ],
+      demat: [{ id: "d1", broker: "Zerodha" }],
+    };
+
+    const html = renderToString(<TxnHistoryTab state={state} removeItem={vi.fn()} />);
+    expect(html).toContain("Unified Financial Journal");
+    expect(html).toContain("Export Master CSV");
+    expect(html).toContain("INFY");
+    expect(html).toContain("HDFC Bank Dividend");
+  });
 });

@@ -13,9 +13,12 @@ import {
   Package,
   X,
   Link2,
+  Calendar,
+  Building2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { THEME } from "../../utils/constants";
-import { fmtINRFull, fmtINRExact } from "../../utils/finance";
+import { fmtINRFull } from "../../utils/finance";
 import { SectionTitle } from "../ui/SectionTitle";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -65,30 +68,49 @@ function livePrice(s: any, marketData: any): number {
   return md?.price !== undefined ? Number(md.price) : Number(s.currentPrice || 0);
 }
 
-
-// Hoisted to module scope (were previously defined inside TxnHistoryTab's render
-// body) — components defined inline in a parent's render are recreated with a new
-// identity on every render, forcing React to unmount/remount them instead of
-// reconciling, which drops local state and re-triggers mount transitions/effects
-// on every keystroke in the search box or FY selector above.
-const SectionHeader = ({ icon: Icon, title, count, color = THEME.accent, subText }: any) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+const SectionHeader = ({
+  icon: Icon,
+  title,
+  count,
+  color = THEME.accent,
+  subText,
+}: {
+  icon: any;
+  title: string;
+  count?: number;
+  color?: string;
+  subText?: React.ReactNode;
+}) => (
+  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-        <Icon size={20} color={color} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          background: `color-mix(in srgb, ${color} 12%, transparent)`,
+          color,
+          flexShrink: 0,
+        }}
+      >
+        <Icon size={17} />
       </div>
-      <span style={{ fontSize: 18, fontWeight: 800, color: THEME.ink, letterSpacing: "-0.015em" }}>
+      <span style={{ fontSize: 17, fontWeight: 800, color: THEME.ink, letterSpacing: "-0.015em" }}>
         {title}
       </span>
-      {count > 0 && (
+      {count !== undefined && count > 0 && (
         <span
           style={{
-            padding: "3px 8px",
-            borderRadius: "var(--radius-xs)",
-            fontSize: 10,
+            padding: "2px 8px",
+            borderRadius: "var(--radius-xs, 6px)",
+            fontSize: 11,
             fontWeight: 800,
             background: `color-mix(in srgb, ${color} 10%, transparent)`,
             color,
+            fontVariantNumeric: "tabular-nums",
           }}
         >
           {count}
@@ -106,53 +128,15 @@ const SectionHeader = ({ icon: Icon, title, count, color = THEME.accent, subText
 const searchSuffix = (query: string) => (query ? ` matching "${query}"` : "");
 
 const TxnHistoryEmptyState = ({ message }: { message: string }) => (
-  <Card style={{ padding: 48, textAlign: "center" }}>
+  <Card style={{ padding: 48, textAlign: "center", background: "var(--surface-0)" }}>
     <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
       <Package size={32} color={THEME.muted} style={{ opacity: 0.35 }} />
     </div>
-    <div style={{ fontSize: 14, color: THEME.muted }}>{message}</div>
+    <div style={{ fontSize: 14, color: THEME.muted, fontWeight: 500 }}>{message}</div>
   </Card>
 );
 
 type SortDir = "asc" | "desc";
-
-/* Clickable column header — toggles sort on the given key, shows an arrow when active.
-   Keeps rows in date-desc order (the original default) until the user opts into a sort. */
-const SortableTh = ({
-  label,
-  sortKey,
-  activeKey,
-  dir,
-  onClick,
-}: {
-  label: string;
-  sortKey: string;
-  activeKey?: string;
-  dir?: SortDir;
-  onClick: (key: string) => void;
-}) => {
-  const active = activeKey === sortKey;
-  return (
-    <th
-      style={{ ...th, textAlign: "right", cursor: "pointer", userSelect: "none" }}
-      onClick={() => onClick(sortKey)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e: React.KeyboardEvent) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick(sortKey);
-        }
-      }}
-      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
-    >
-      {label}
-      <span style={{ opacity: active ? 1 : 0.3, marginLeft: 4 }}>
-        {active ? (dir === "asc" ? "▲" : "▼") : "⇅"}
-      </span>
-    </th>
-  );
-};
 
 const SoldTable = ({
   rows,
@@ -165,6 +149,7 @@ const SoldTable = ({
   sortKey,
   sortDir,
   onSort,
+  onInspect,
 }: {
   rows: any[];
   type: "stock" | "mf";
@@ -176,207 +161,229 @@ const SoldTable = ({
   sortKey?: string;
   sortDir?: SortDir;
   onSort: (key: string) => void;
+  onInspect?: (item: any, type: "stock_sold" | "mf_sold") => void;
 }) => {
   const { run: deleteSaleRecord } = useAsyncAction(
-    async (collection: string, id: string) => { await removeItem(collection, id); },
-    { onError: (e: any) => showToast?.(`Failed to delete sale record: ${e?.message || "Unknown error"}`, "error") }
+    async (collection: string, id: string) => {
+      await removeItem(collection, id);
+    },
+    {
+      onError: (e: any) =>
+        showToast?.(`Failed to delete sale record: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
   const [confirmDelete, setConfirmDelete] = useState<{ message: string; onConfirm: () => void } | null>(
     null
   );
   const total = rows.reduce((s: number, r: any) => s + Number(r.profit || 0), 0);
+
   if (rows.length === 0)
     return (
       <TxnHistoryEmptyState
         message={`No ${type === "stock" ? "stock sales" : "MF redemptions"} recorded in ${fyLabel}${searchSuffix(searchQuery)}`}
       />
     );
+
   return (
     <>
-    <DataTable
-      columns={[
-        {
-          key: "company",
-          header: type === "stock" ? "Company" : "Scheme",
-          accessor: (s: any) => (
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {type === "stock" ? (
-                <StockLogo yfSym={s.symbol} size={28} />
-              ) : (
-                <MFLogo fundName={s.scheme} size={28} />
-              )}
-              <div>
-                <span style={{ fontWeight: 700, color: THEME.ink }}>
-                  {type === "stock" ? s.symbol?.replace(/\.(NS|BO)$/i, "") : s.scheme}
-                </span>
-                {(type === "stock" || (type === "mf" && s.type)) && (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      marginLeft: 6,
-                      color: THEME.muted,
-                      background: "var(--surface-2)",
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {type === "stock" ? s.exchange || "NSE" : s.type}
-                  </span>
+      <DataTable
+        columns={[
+          {
+            key: "company",
+            header: type === "stock" ? "Company" : "Scheme",
+            accessor: (s: any) => (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {type === "stock" ? (
+                  <StockLogo yfSym={s.symbol} size={28} />
+                ) : (
+                  <MFLogo fundName={s.scheme} size={28} />
                 )}
+                <div>
+                  <div style={{ fontWeight: 700, color: THEME.ink }}>
+                    {type === "stock" ? s.symbol?.replace(/\.(NS|BO)$/i, "") : s.scheme}
+                  </div>
+                  {(type === "stock" || (type === "mf" && s.type)) && (
+                    <span
+                      style={{
+                        fontSize: 9.5,
+                        color: THEME.muted,
+                        background: "var(--surface-2)",
+                        padding: "1px 5px",
+                        borderRadius: 4,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {type === "stock" ? s.exchange || "NSE" : s.type}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ),
-        },
-        {
-          key: "buyDate",
-          header: "Buy Date",
-          align: "right",
-          accessor: (s: any) => (
-            <span style={{ color: THEME.muted, fontSize: 12 }}>{fmtDate(s.buyDate)}</span>
-          ),
-        },
-        {
-          key: "buyPrice",
-          header: type === "stock" ? "Buy Price" : "Buy NAV",
-          align: "right",
-          accessor: (s: any) => {
-            const buyP = type === "stock" ? Number(s.buyPrice) : Number(s.buyNav);
-            return (
-              <span style={{ fontWeight: 600 }}>
-                <Prv>₹{buyP.toFixed(type === "mf" ? 4 : 2)}</Prv>
-              </span>
-            );
+            ),
           },
-        },
-        {
-          key: "qty",
-          header: type === "stock" ? "Qty" : "Units",
-          align: "right",
-          accessor: (s: any) => (
-            <span style={{ fontWeight: 700 }}>
-              {type === "stock" ? s.qty : Number(s.units).toFixed(3)}
-            </span>
-          ),
-        },
-        {
-          key: "date",
-          header: "Sell Date",
-          align: "right",
-          sortable: true,
-          accessor: (s: any) => (
-            <span style={{ color: THEME.muted, fontSize: 12 }}>{fmtDate(s.sellDate)}</span>
-          ),
-        },
-        {
-          key: "sellPrice",
-          header: type === "stock" ? "Sell Price" : "Sell NAV",
-          align: "right",
-          accessor: (s: any) => {
-            const buyP = type === "stock" ? Number(s.buyPrice) : Number(s.buyNav);
-            const sellP = type === "stock" ? Number(s.sellPrice) : Number(s.sellNav);
-            return (
-              <span style={{ fontWeight: 600, color: sellP >= buyP ? THEME.sage : THEME.rust }}>
-                <Prv>
-                  ₹{sellP.toFixed(type === "mf" ? 4 : 2)} {sellP >= buyP ? "↑" : "↓"}
-                </Prv>
-              </span>
-            );
+          {
+            key: "buyDate",
+            header: "Buy Date",
+            align: "right",
+            accessor: (s: any) => (
+              <span style={{ color: THEME.muted, fontSize: 12 }}>{fmtDate(s.buyDate)}</span>
+            ),
           },
-        },
-        {
-          key: "amount",
-          header: "Profit / Loss",
-          align: "right",
-          sortable: true,
-          accessor: (s: any) => {
-            const profit = Number(s.profit || 0);
-            return (
-              <span style={{ color: profit >= 0 ? THEME.sage : THEME.rust, fontWeight: 800, fontSize: 14 }}>
-                <Prv>
-                  {profit >= 0 ? "+" : ""}₹
-                  {Math.abs(profit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                </Prv>
-              </span>
-            );
+          {
+            key: "buyPrice",
+            header: type === "stock" ? "Buy Price" : "Buy NAV",
+            align: "right",
+            accessor: (s: any) => {
+              const buyP = type === "stock" ? Number(s.buyPrice) : Number(s.buyNav);
+              return (
+                <span style={{ fontWeight: 600 }}>
+                  <Prv>₹{buyP.toFixed(type === "mf" ? 4 : 2)}</Prv>
+                </span>
+              );
+            },
           },
-        },
-        {
-          key: "broker",
-          header: "Broker",
-          align: "right",
-          accessor: (s: any) => (
-            <span style={{ color: THEME.muted, fontSize: 12, fontWeight: 600 }}>{s.broker || "—"}</span>
-          ),
-        },
-      ]}
-      data={rows}
-      hideSearch
-      keyExtractor={(s: any) => s.id}
-      sortKey={sortKey || null}
-      sortDirection={sortDir || "asc"}
-      onSortChange={(key: any) => onSort(key)}
-      actions={(s: any) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            const name =
-              type === "stock" ? s.symbol?.replace(/\.(NS|BO)$/i, "") || "this stock" : s.scheme || "this fund";
-            setConfirmDelete({
-              message: `Delete this sale record for "${name}"? This cannot be undone.`,
-              onConfirm: () => deleteSaleRecord(type === "stock" ? "stockSells" : "mfSells", s.id),
-            });
-          }}
-          title="Delete"
-          aria-label="Delete sale record"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            padding: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: THEME.rust,
-          }}
-        >
-          <Trash2 size={14} />
-        </Button>
-      )}
-      footer={
-        <tr style={{ background: "var(--surface-1)" }}>
-          <td colSpan={6} style={{ ...td, paddingLeft: 16, fontWeight: 800, color: THEME.ink }}>
-            Total Realized P&L
-          </td>
-          <td
+          {
+            key: "qty",
+            header: type === "stock" ? "Qty" : "Units",
+            align: "right",
+            accessor: (s: any) => (
+              <span style={{ fontWeight: 700 }}>
+                {type === "stock" ? s.qty : Number(s.units).toFixed(3)}
+              </span>
+            ),
+          },
+          {
+            key: "date",
+            header: "Sell Date",
+            align: "right",
+            sortable: true,
+            accessor: (s: any) => (
+              <span style={{ color: THEME.muted, fontSize: 12 }}>{fmtDate(s.sellDate)}</span>
+            ),
+          },
+          {
+            key: "sellPrice",
+            header: type === "stock" ? "Sell Price" : "Sell NAV",
+            align: "right",
+            accessor: (s: any) => {
+              const buyP = type === "stock" ? Number(s.buyPrice) : Number(s.buyNav);
+              const sellP = type === "stock" ? Number(s.sellPrice) : Number(s.sellNav);
+              return (
+                <span style={{ fontWeight: 600, color: sellP >= buyP ? THEME.sage : THEME.rust }}>
+                  <Prv>
+                    ₹{sellP.toFixed(type === "mf" ? 4 : 2)} {sellP >= buyP ? "▲" : "▼"}
+                  </Prv>
+                </span>
+              );
+            },
+          },
+          {
+            key: "amount",
+            header: "Profit / Loss",
+            align: "right",
+            sortable: true,
+            accessor: (s: any) => {
+              const profit = Number(s.profit || 0);
+              return (
+                <span
+                  style={{
+                    color: profit >= 0 ? THEME.sage : THEME.rust,
+                    fontWeight: 800,
+                    fontSize: 13.5,
+                  }}
+                >
+                  <Prv>
+                    {profit >= 0 ? "+" : ""}₹
+                    {Math.abs(profit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                  </Prv>
+                </span>
+              );
+            },
+          },
+          {
+            key: "broker",
+            header: "Broker",
+            align: "right",
+            accessor: (s: any) => (
+              <span style={{ color: THEME.muted, fontSize: 12, fontWeight: 600 }}>
+                {s.broker || "—"}
+              </span>
+            ),
+          },
+        ]}
+        data={rows}
+        hideSearch
+        keyExtractor={(s: any) => s.id}
+        sortKey={sortKey || null}
+        sortDirection={sortDir || "asc"}
+        onSortChange={(key: any) => onSort(key)}
+        onRowClick={onInspect ? (s: any) => onInspect(s, type === "stock" ? "stock_sold" : "mf_sold") : undefined}
+        rowAriaLabel={(s: any) =>
+          `View details for ${type === "stock" ? s.symbol : s.scheme} sale`
+        }
+        actions={(s: any) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: any) => {
+              e.stopPropagation();
+              const name =
+                type === "stock"
+                  ? s.symbol?.replace(/\.(NS|BO)$/i, "") || "this stock"
+                  : s.scheme || "this fund";
+              setConfirmDelete({
+                message: `Delete this sale record for "${name}"? This cannot be undone.`,
+                onConfirm: () => deleteSaleRecord(type === "stock" ? "stockSells" : "mfSells", s.id),
+              });
+            }}
+            title="Delete"
+            aria-label="Delete sale record"
             style={{
-              ...td,
-              textAlign: "right",
-              fontWeight: 900,
-              color: total >= 0 ? THEME.sage : THEME.rust,
-              fontSize: 15,
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: THEME.rust,
             }}
           >
-            <Prv>
-              {total >= 0 ? "+" : ""}₹
-              {Math.abs(total).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-            </Prv>
-          </td>
-          <td colSpan={2} style={td}></td>
-        </tr>
-      }
-    />
-    {confirmDelete && (
-      <ConfirmDialog
-        message={confirmDelete.message}
-        onConfirm={() => {
-          confirmDelete.onConfirm();
-          setConfirmDelete(null);
-        }}
-        onCancel={() => setConfirmDelete(null)}
+            <Trash2 size={14} />
+          </Button>
+        )}
+        footer={
+          <tr style={{ background: "var(--surface-1)" }}>
+            <td colSpan={6} style={{ ...td, paddingLeft: 16, fontWeight: 800, color: THEME.ink }}>
+              Total Realized P&L
+            </td>
+            <td
+              style={{
+                ...td,
+                textAlign: "right",
+                fontWeight: 900,
+                color: total >= 0 ? THEME.sage : THEME.rust,
+                fontSize: 14.5,
+              }}
+            >
+              <Prv>
+                {total >= 0 ? "+" : ""}₹
+                {Math.abs(total).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </Prv>
+            </td>
+            <td colSpan={2} style={td}></td>
+          </tr>
+        }
       />
-    )}
+      {confirmDelete && (
+        <ConfirmDialog
+          message={confirmDelete.message}
+          onConfirm={() => {
+            confirmDelete.onConfirm();
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </>
   );
 };
@@ -393,15 +400,23 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
   >("all");
   const [txnDematId, setTxnDematId] = useState<string | null>(null);
   const [viewCashTxnId, setViewCashTxnId] = useState<string | null>(null);
+  const [inspectedStock, setInspectedStock] = useState<any | null>(null);
+  const [inspectedMF, setInspectedMF] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortState, setSortState] = useState<Record<string, { key: string; dir: SortDir }>>({});
-  const [confirmDeleteTxn, setConfirmDeleteTxn] = useState<{ message: string; onConfirm: () => void } | null>(
-    null
-  );
+  const [confirmDeleteTxn, setConfirmDeleteTxn] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const { run: deleteCashTxn } = useAsyncAction(
-    async (id: string) => { await removeItem("transactions", id); },
-    { onError: (e: any) => showToast?.(`Failed to delete transaction: ${e?.message || "Unknown error"}`, "error") }
+    async (id: string) => {
+      await removeItem("transactions", id);
+    },
+    {
+      onError: (e: any) =>
+        showToast?.(`Failed to delete transaction: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
 
   const toggleSort = useCallback((section: string, key: string) => {
@@ -423,11 +438,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
     [sortState]
   );
 
-  // Plain "YYYY-MM-DD" string bounds — comparing ISO date strings lexicographically avoids the
-  // Date-object timezone trap where a date-only string ("2026-04-01") parses as UTC midnight
-  // while a date+time string ("...T23:59:59", no "Z") parses in the browser's local timezone.
-  // Mixing those two parsing rules can shift the FY boundary by hours depending on the user's
-  // timezone, occasionally letting a transaction slip into the wrong FY near midnight.
   const fyStart = (fy: number) => `${fy}-04-01`;
   const fyEnd = (fy: number) => `${fy + 1}-03-31`;
 
@@ -451,15 +461,11 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
   const allFYs = useMemo(() => {
     const fySet = new Set<number>();
     fySet.add(currentFY);
-    // Same string-slice comparison as fyStart/fyEnd above — avoids parsing a
-    // date-only "YYYY-MM-DD" string as UTC midnight and reading it back with
-    // local getMonth()/getFullYear(), which can misclassify a date's FY by a
-    // day near year/month boundaries depending on the user's timezone offset.
     const addFY = (dateStr: string) => {
       if (!dateStr) return;
       const d = dateStr.slice(0, 10);
       const y = Number(d.slice(0, 4));
-      const m = Number(d.slice(5, 7)); // 1-indexed month
+      const m = Number(d.slice(5, 7));
       if (!y || !m) return;
       fySet.add(m >= 4 ? y : y - 1);
     };
@@ -490,7 +496,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
         (s: any) =>
           inFY(s.buyDate) &&
           (!txnDematId || s.dematId === txnDematId) &&
-          matchesSearch(`${s.symbol} ${s.broker}`)
+          matchesSearch(`${s.symbol} ${s.broker || ""}`)
       )
       .map((s: any) => ({
         ...s,
@@ -503,7 +509,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
         (s: any) =>
           inFY(s.buyDate) &&
           (!txnDematId || s.dematId === txnDematId) &&
-          matchesSearch(`${s.symbol} ${s.broker}`)
+          matchesSearch(`${s.symbol} ${s.broker || ""}`)
       )
       .map((s: any) => ({
         ...s,
@@ -524,7 +530,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           (s: any) =>
             inFY(s.sellDate) &&
             (!txnDematId || s.dematId === txnDematId) &&
-            matchesSearch(`${s.symbol} ${s.broker}`)
+            matchesSearch(`${s.symbol} ${s.broker || ""}`)
         )
         .sort((a: any, b: any) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
     [state.stockSells, txnDematId, inFY, matchesSearch]
@@ -535,7 +541,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
       .filter(
         (m: any) =>
           inFY(m.buyDate) &&
-          matchesSearch(`${m.name || m.scheme} ${m.category || m.mfType || m.type}`)
+          matchesSearch(`${m.name || m.scheme} ${m.category || m.mfType || m.type || ""}`)
       )
       .map((m: any) => ({
         ...m,
@@ -546,7 +552,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
       .filter(
         (m: any) =>
           inFY(m.buyDate) &&
-          matchesSearch(`${m.name || m.scheme} ${m.category || m.mfType || m.type}`)
+          matchesSearch(`${m.name || m.scheme} ${m.category || m.mfType || m.type || ""}`)
       )
       .map((m: any) => ({
         ...m,
@@ -568,7 +574,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
         .filter(
           (m: any) =>
             inFY(m.sellDate) &&
-            matchesSearch(`${m.name || m.scheme} ${m.category || m.mfType || m.type}`)
+            matchesSearch(`${m.name || m.scheme} ${m.category || m.mfType || m.type || ""}`)
         )
         .sort((a: any, b: any) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
     [state.mfSells, inFY, matchesSearch]
@@ -580,7 +586,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
         .filter(
           (t: any) =>
             inFY(t.date) &&
-            matchesSearch(`${t.note} ${t.category} ${t.description || ""} ${t.type}`)
+            matchesSearch(`${t.note || ""} ${t.category || ""} ${t.description || ""} ${t.type || ""}`)
         )
         .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [state.transactions, inFY, matchesSearch]
@@ -593,9 +599,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
   const mfRealizedPnl = mfSoldInFY.reduce((s: number, sl: any) => s + Number(sl.profit || 0), 0);
   const totalRealizedPnl = stocksRealizedPnl + mfRealizedPnl;
 
-  // Self-transfers between the user's own accounts aren't real income/spend — excluded
-  // from these totals to match how Dashboard/BanksTab/AnnualReportTab treat them, so this
-  // tab's "Cash Net Flow" doesn't double-count money moving between the user's own accounts.
   const isTransferCategory = (cat: string) =>
     cat === "Transfer" || cat === "Self Transfer" || cat === "Self-Transfer";
   const hasTransfers = cashTransactionsInFY.some((t: any) => isTransferCategory(t.category));
@@ -657,9 +660,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
   const totalStocksInvested = stocksBoughtTotals.invested;
   const totalMFInvested = mfBoughtTotals.invested;
 
-  // Display order — defaults to the date-desc order computed above; a column-header click
-  // re-sorts via sortRows without touching the underlying filtered arrays (totals/CSV exports
-  // that don't care about order keep reading the base *_InFY arrays).
   const stocksBoughtSorted = useMemo(
     () =>
       sortRows(stocksBoughtInFY, "stocks_bought", {
@@ -680,8 +680,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
     () =>
       sortRows(mfBoughtInFY, "mf_bought", {
         date: (m: any) => new Date(m.buyDate).getTime(),
-        // Matches the buyNav fallback used in mfBoughtTotals/render below — CAS-imported
-        // rows can have an empty buyNav with invested/units populated instead.
         amount: (m: any) =>
           Number(m.units) *
           (m.buyNav ? Number(m.buyNav) : m.invested && m.units ? Number(m.invested) / Number(m.units) : 0),
@@ -705,6 +703,119 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
     [cashTransactionsInFY, sortRows]
   );
 
+  // Consolidated Master Journal Stream (All assets chronologically interleaved)
+  const unifiedJournalEntries = useMemo(() => {
+    const list: any[] = [];
+
+    // Stocks Bought
+    stocksBoughtInFY.forEach((s: any) => {
+      const amount = Number(s.qty) * Number(s.avgPrice);
+      list.push({
+        id: `uj-sb-${s.id}`,
+        rawId: s.id,
+        date: s.buyDate,
+        assetClass: "stock",
+        actionType: "Stock Buy",
+        title: s.symbol?.replace(/\.(NS|BO)$/i, ""),
+        subtitle: `${s.qty} shares @ ₹${Number(s.avgPrice).toFixed(2)} (${s.exchange || "NSE"})`,
+        amount: amount,
+        flowType: "outflow",
+        accountLabel: s.broker || "Demat",
+        status: s.isSold ? "Liquidated" : "Active Holding",
+        sourceItem: s,
+      });
+    });
+
+    // Stocks Sold
+    stocksSoldInFY.forEach((s: any) => {
+      const profit = Number(s.profit || 0);
+      list.push({
+        id: `uj-ss-${s.id}`,
+        rawId: s.id,
+        date: s.sellDate,
+        assetClass: "stock",
+        actionType: "Stock Sell",
+        title: s.symbol?.replace(/\.(NS|BO)$/i, ""),
+        subtitle: `${s.qty} shares sold @ ₹${Number(s.sellPrice).toFixed(2)} (Bought @ ₹${Number(s.buyPrice).toFixed(2)})`,
+        amount: Number(s.qty) * Number(s.sellPrice || 0),
+        pnl: profit,
+        flowType: "inflow",
+        accountLabel: s.broker || "Demat",
+        status: "Realized",
+        sourceItem: s,
+      });
+    });
+
+    // Mutual Funds Bought
+    mfBoughtInFY.forEach((m: any) => {
+      const buyNav = m.buyNav
+        ? Number(m.buyNav)
+        : m.invested && m.units
+          ? Number(m.invested) / Number(m.units)
+          : 0;
+      const amount = Number(m.units) * buyNav;
+      list.push({
+        id: `uj-mb-${m.id}`,
+        rawId: m.id,
+        date: m.buyDate,
+        assetClass: "mf",
+        actionType: "MF Buy",
+        title: m.name || m.scheme,
+        subtitle: `${Number(m.units).toFixed(3)} units @ NAV ₹${buyNav.toFixed(4)}`,
+        amount: amount,
+        flowType: "outflow",
+        accountLabel: m.category || m.mfType || m.type || "Mutual Fund",
+        status: m.isSold ? "Redeemed" : "Active Holding",
+        sourceItem: m,
+      });
+    });
+
+    // Mutual Funds Sold
+    mfSoldInFY.forEach((m: any) => {
+      const profit = Number(m.profit || 0);
+      const units = Number(m.units || 0);
+      const sellNav = Number(m.sellNav || 0);
+      list.push({
+        id: `uj-ms-${m.id}`,
+        rawId: m.id,
+        date: m.sellDate,
+        assetClass: "mf",
+        actionType: "MF Redeem",
+        title: m.name || m.scheme,
+        subtitle: `${units.toFixed(3)} units redeemed @ NAV ₹${sellNav.toFixed(4)}`,
+        amount: units * sellNav,
+        pnl: profit,
+        flowType: "inflow",
+        accountLabel: m.category || m.mfType || m.type || "Mutual Fund",
+        status: "Realized",
+        sourceItem: m,
+      });
+    });
+
+    // Bank & Cash Transactions
+    cashTransactionsInFY.forEach((t: any) => {
+      const bank = state.bankAccounts?.find((b: any) => b.id === t.accountId);
+      const isCredit = t.type === "credit";
+      const isTransfer = isTransferCategory(t.category);
+      list.push({
+        id: `uj-ct-${t.id}`,
+        rawId: t.id,
+        date: t.date,
+        assetClass: "cash",
+        actionType: isTransfer ? "Transfer" : isCredit ? "Bank Credit" : "Bank Debit",
+        title: t.note || (bank ? bank.bankName : "General Ledger"),
+        subtitle: [t.category, t.description].filter(Boolean).join(" · "),
+        amount: Number(t.amount || 0),
+        flowType: isTransfer ? "transfer" : isCredit ? "inflow" : "outflow",
+        accountLabel: bank ? cashTxnAccountLabel(bank) : "Cash/Bank",
+        status: isTransfer ? "Internal Transfer" : isCredit ? "Inflow" : "Outflow",
+        sourceItem: t,
+      });
+    });
+
+    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [stocksBoughtInFY, stocksSoldInFY, mfBoughtInFY, mfSoldInFY, cashTransactionsInFY, state.bankAccounts]);
+
   const fmtDate = (d: string) =>
     d
       ? new Date(d + "T00:00:00").toLocaleDateString("en-IN", {
@@ -726,12 +837,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
   ] as const;
 
   const sectionCounts: Record<string, number> = {
-    all:
-      stocksBoughtInFY.length +
-      stocksSoldInFY.length +
-      mfBoughtInFY.length +
-      mfSoldInFY.length +
-      cashTransactionsInFY.length,
+    all: unifiedJournalEntries.length,
     stocks_bought: stocksBoughtInFY.length,
     stocks_sold: stocksSoldInFY.length,
     mf_bought: mfBoughtInFY.length,
@@ -767,24 +873,84 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
     document.body.removeChild(link);
   };
 
+  const exportUnifiedMasterLedger = () => {
+    exportToCSV(
+      unifiedJournalEntries,
+      `Global_Ledger_Master_${fyFileLabel}.csv`,
+      ["Date", "Asset Class", "Action Type", "Entity / Note", "Details", "Amount", "Flow Direction", "Account / Broker", "Status"],
+      (row) => [
+        row.date,
+        row.assetClass,
+        row.actionType,
+        row.title,
+        row.subtitle,
+        row.amount,
+        row.flowType,
+        row.accountLabel,
+        row.status,
+      ]
+    );
+  };
+
+  const handleInspect = (item: any, type: string) => {
+    if (!item) return;
+    if (type === "cash") {
+      setViewCashTxnId(item.id || item.rawId);
+    } else if (type === "stock" || type === "stock_sold") {
+      setInspectedStock(item);
+    } else if (type === "mf" || type === "mf_sold") {
+      setInspectedMF(item);
+    }
+  };
+
   return (
     <div className="tab-content-enter">
-      <SectionTitle sub="Unified transaction accounting for capital demat investments and liquidity bank accounts">
-        Global Ledger
-      </SectionTitle>
-
-      {/* Premium Search & Period Selector bar */}
+      {/* Header & Title */}
       <div
         style={{
           display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
           gap: 16,
-          marginBottom: 18,
+          flexWrap: "wrap",
+          marginBottom: 16,
+        }}
+      >
+        <SectionTitle sub="Unified multi-asset transaction accounting across capital equities, mutual funds, and liquidity bank accounts">
+          Global Ledger
+        </SectionTitle>
+
+        {/* Global Export Hub */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 4 }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Download size={14} />}
+            onClick={exportUnifiedMasterLedger}
+            title="Export complete master ledger for the selected period"
+          >
+            Export Master CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* Control Bar: Search & FY Selector */}
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          marginBottom: 20,
           flexWrap: "wrap",
           alignItems: "center",
         }}
       >
         <div
-          style={{ display: "flex", flex: "1 1 280px", position: "relative", alignItems: "center" }}
+          style={{
+            display: "flex",
+            flex: "1 1 300px",
+            position: "relative",
+            alignItems: "center",
+          }}
         >
           <Search
             size={16}
@@ -794,18 +960,19 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           <input
             type="text"
             aria-label="Search transactions"
-            placeholder="Search symbols, notes, categories, brokers..."
+            placeholder="Search symbols, notes, categories, schemes, brokers..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
               width: "100%",
-              padding: `10px ${searchQuery ? 40 : 14}px 10px 40px`,
+              padding: `10px ${searchQuery ? 38 : 14}px 10px 38px`,
               borderRadius: 12,
               border: `1.5px solid ${THEME.line}`,
               background: "var(--surface-0)",
               color: THEME.ink,
               fontSize: 13.5,
               boxShadow: "var(--shadow-sm)",
+              outline: "none",
             }}
           />
           {searchQuery && (
@@ -832,11 +999,13 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
             </button>
           )}
         </div>
+
+        {/* Period Selector */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
             background: "var(--surface-0)",
             padding: "4px 14px",
             borderRadius: 12,
@@ -845,6 +1014,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
             boxShadow: "var(--shadow-sm)",
           }}
         >
+          <Calendar size={14} color={THEME.muted} />
           <span
             style={{
               fontSize: 11,
@@ -854,7 +1024,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               letterSpacing: "0.05em",
             }}
           >
-            Period
+            Period:
           </span>
           <select
             aria-label="Select period"
@@ -866,7 +1036,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               fontSize: 13,
               cursor: "pointer",
               outline: "none",
-              paddingRight: "20px",
             }}
             value={selectedFY}
             onChange={(e) => setSelectedFY(Number(e.target.value))}
@@ -880,11 +1049,11 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
         </div>
       </div>
 
-      {/* Premium FY Summary strip */}
+      {/* Hero Financial KPI Telemetry Dashboard */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
           gap: 14,
           marginBottom: 24,
         }}
@@ -896,6 +1065,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           formatValue={fmtINRFull}
           color={THEME.accent}
           icon={<BarChart3 />}
+          sub={`${stocksBoughtInFY.length} purchase${stocksBoughtInFY.length === 1 ? "" : "s"} · ${fyLabel}`}
         />
         <StatCard
           label="MF Invested"
@@ -904,6 +1074,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           formatValue={fmtINRFull}
           color={THEME.violet}
           icon={<Layers />}
+          sub={`${mfBoughtInFY.length} SIP/lumpsum${mfBoughtInFY.length === 1 ? "" : "s"} · ${fyLabel}`}
         />
         <StatCard
           label="Realized P&L"
@@ -912,6 +1083,8 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           formatValue={(n) => `${n >= 0 ? "+" : ""}${fmtINRFull(Math.abs(n))}`}
           color={totalRealizedPnl >= 0 ? THEME.sage : THEME.rust}
           icon={totalRealizedPnl >= 0 ? <TrendingUp /> : <TrendingDown />}
+          sub={`${stocksSoldInFY.length + mfSoldInFY.length} exits closed`}
+          subColor={totalRealizedPnl >= 0 ? THEME.sage : THEME.rust}
         />
         <StatCard
           label="Cash Net Flow"
@@ -920,10 +1093,12 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           formatValue={(n) => `${n >= 0 ? "+" : ""}${fmtINRFull(Math.abs(n))}`}
           color={cashNetFlow >= 0 ? THEME.sage : THEME.rust}
           icon={<Coins />}
+          sub={`+₹${(totalCredits / 1000).toFixed(0)}k in · -₹${(totalDebits / 1000).toFixed(0)}k out`}
+          subColor={cashNetFlow >= 0 ? THEME.sage : THEME.rust}
         />
       </div>
 
-      {/* Section Tab Pills */}
+      {/* Modern Asset Segment Navigation Tabs (Clean Lucide Icons, No Emojis) */}
       <div
         className="no-print"
         style={{
@@ -931,10 +1106,10 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           gap: 6,
           flexWrap: "nowrap",
           overflowX: "auto",
-          marginBottom: 24,
+          marginBottom: 22,
           background: "var(--surface-0)",
-          padding: "10px 8px",
-          borderRadius: 16,
+          padding: "8px",
+          borderRadius: 14,
           border: `1px solid ${THEME.line}`,
           boxShadow: "var(--shadow-sm)",
           scrollbarWidth: "none",
@@ -950,19 +1125,38 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               onClick={() => setActiveSection(s.id)}
               aria-pressed={active}
               className={`demat-portfolio-pill ${active ? "active" : ""}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "none",
+                background: active
+                  ? `color-mix(in srgb, ${THEME.accent} 15%, var(--surface-1))`
+                  : "transparent",
+                color: active ? THEME.accent : THEME.muted,
+                fontWeight: active ? 800 : 600,
+                fontSize: 13,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                whiteSpace: "nowrap",
+              }}
             >
-              <Icon size={14} style={{ color: THEME.accent }} />
+              <Icon size={15} style={{ color: active ? THEME.accent : "inherit" }} />
               <span>{s.label}</span>
               {count > 0 && (
                 <span
                   style={{
                     padding: "1px 6px",
-                    borderRadius: "var(--radius-xs)",
-                    fontSize: 10,
+                    borderRadius: "var(--radius-xs, 4px)",
+                    fontSize: 10.5,
                     fontWeight: 800,
-                    background: `color-mix(in srgb, ${THEME.accent} 13%, transparent)`,
-                    color: THEME.accent,
-                    marginLeft: 4,
+                    background: active
+                      ? `color-mix(in srgb, ${THEME.accent} 25%, transparent)`
+                      : "var(--surface-2)",
+                    color: active ? THEME.accent : THEME.muted,
+                    fontVariantNumeric: "tabular-nums",
                   }}
                 >
                   {count}
@@ -973,151 +1167,236 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
         })}
       </div>
 
-      {/* Demat Account selectors — MF records have no dematId anywhere in the app,
-          so this filter has zero effect on the mf_bought/mf_sold sections; only
-          show it where it can actually do something (stocks + "all"). */}
+      {/* Demat Account Selector Filters */}
       {(state.demat || []).length > 1 &&
         activeSection !== "cash_ledger" &&
         activeSection !== "mf_bought" &&
         activeSection !== "mf_sold" && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            marginBottom: 24,
-            alignItems: "center",
-            padding: "8px 12px",
-            background: "var(--surface-1)",
-            borderRadius: 12,
-            border: `1px solid ${THEME.line}`,
-          }}
-        >
-          <span
+          <div
             style={{
-              fontSize: 11,
-              color: THEME.muted,
-              fontWeight: 800,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              marginRight: 6,
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 22,
+              alignItems: "center",
+              padding: "8px 14px",
+              background: "var(--surface-1)",
+              borderRadius: 12,
+              border: `1px solid ${THEME.line}`,
             }}
           >
-            Account:
-          </span>
-          <Button
-            size="sm"
-            variant={txnDematId === null ? "accent" : "secondary"}
-            onClick={() => setTxnDematId(null)}
-            style={{ height: 26, padding: "0 12px", fontSize: 10.5, borderRadius: 16 }}
-          >
-            All Accounts
-          </Button>
-          {(state.demat || []).map((d: any) => (
-            <Button
-              key={d.id}
-              size="sm"
-              variant={txnDematId === d.id ? "accent" : "secondary"}
-              onClick={() => setTxnDematId(d.id)}
-              style={{ height: 26, padding: "0 12px", fontSize: 10.5, borderRadius: 16 }}
+            <Building2 size={14} color={THEME.muted} />
+            <span
+              style={{
+                fontSize: 11,
+                color: THEME.muted,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                marginRight: 6,
+              }}
             >
-              {d.broker || d.dpId || "Account"}
+              Demat Account:
+            </span>
+            <Button
+              size="sm"
+              variant={txnDematId === null ? "accent" : "secondary"}
+              onClick={() => setTxnDematId(null)}
+              style={{ height: 26, padding: "0 12px", fontSize: 11, borderRadius: 16 }}
+            >
+              All Demat Accounts
             </Button>
-          ))}
+            {(state.demat || []).map((d: any) => (
+              <Button
+                key={d.id}
+                size="sm"
+                variant={txnDematId === d.id ? "accent" : "secondary"}
+                onClick={() => setTxnDematId(d.id)}
+                style={{ height: 26, padding: "0 12px", fontSize: 11, borderRadius: 16 }}
+              >
+                {d.broker || d.dpId || "Account"}
+              </Button>
+            ))}
+          </div>
+        )}
+
+      {/* ── UNIFIED MASTER JOURNAL (Shown in "All Assets" Mode) ── */}
+      {activeSection === "all" && (
+        <div style={{ marginBottom: 36 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: 14,
+            }}
+          >
+            <SectionHeader
+              icon={FileSpreadsheet}
+              title="Unified Financial Journal"
+              count={unifiedJournalEntries.length}
+              color={THEME.accent}
+              subText="Chronological multi-asset ledger uniting equity investments, mutual funds, and bank movements"
+            />
+          </div>
+
+          {unifiedJournalEntries.length === 0 ? (
+            <TxnHistoryEmptyState
+              message={`No financial activity recorded in ${fyLabel}${searchSuffix(searchQuery)}`}
+            />
+          ) : (
+            <DataTable
+              columns={[
+                {
+                  key: "date",
+                  header: "Date",
+                  sortable: true,
+                  width: "115px",
+                  accessor: (row: any) => (
+                    <span style={{ color: THEME.muted, fontSize: 12, fontWeight: 600 }}>
+                      {fmtDate(row.date)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "title",
+                  header: "Entity / Narrative",
+                  accessor: (row: any) => (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {row.assetClass === "stock" ? (
+                        <StockLogo yfSym={row.sourceItem?.symbol} size={28} />
+                      ) : row.assetClass === "mf" ? (
+                        <MFLogo fundName={row.title} size={28} />
+                      ) : (
+                        <BankLogo bankName={row.title} size={28} />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 700, color: THEME.ink, fontSize: 13 }}>
+                          {row.title}
+                        </div>
+                        {row.subtitle && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: THEME.muted,
+                              fontWeight: 500,
+                              maxWidth: 320,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {row.subtitle}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: "actionType",
+                  header: "Type",
+                  accessor: (row: any) => {
+                    const isCredit = row.flowType === "inflow";
+                    const isTransfer = row.flowType === "transfer";
+                    const color = isTransfer
+                      ? THEME.cyan
+                      : isCredit
+                        ? THEME.sage
+                        : row.assetClass === "stock"
+                          ? THEME.accent
+                          : row.assetClass === "mf"
+                            ? THEME.violet
+                            : THEME.rust;
+                    return (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                          color: color,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {isTransfer ? "Transfer" : isCredit ? "Credit / Inflow" : row.actionType}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: "accountLabel",
+                  header: "Account / Channel",
+                  align: "right",
+                  accessor: (row: any) => (
+                    <span style={{ fontSize: 11.5, color: THEME.muted, fontWeight: 600 }}>
+                      {row.accountLabel}
+                    </span>
+                  ),
+                },
+                {
+                  key: "amount",
+                  header: "Amount",
+                  align: "right",
+                  sortable: true,
+                  accessor: (row: any) => {
+                    const isCredit = row.flowType === "inflow";
+                    const isTransfer = row.flowType === "transfer";
+                    return (
+                      <div style={{ textAlign: "right" }}>
+                        <span
+                          style={{
+                            fontWeight: 800,
+                            fontSize: 13.5,
+                            color: isTransfer
+                              ? THEME.ink
+                              : isCredit
+                                ? THEME.sage
+                                : THEME.ink,
+                          }}
+                        >
+                          <Prv>
+                            {isTransfer ? "" : isCredit ? "+" : "-"}₹
+                            {Number(row.amount || 0).toLocaleString("en-IN", {
+                              maximumFractionDigits: 0,
+                            })}
+                          </Prv>
+                        </span>
+                        {row.pnl !== undefined && (
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              color: row.pnl >= 0 ? THEME.sage : THEME.rust,
+                            }}
+                          >
+                            <Prv>
+                              P&L {row.pnl >= 0 ? "+" : ""}₹
+                              {Math.abs(row.pnl).toLocaleString("en-IN", {
+                                maximumFractionDigits: 0,
+                              })}
+                            </Prv>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  },
+                },
+              ]}
+              data={unifiedJournalEntries}
+              hideSearch
+              keyExtractor={(row: any) => row.id}
+              onRowClick={(row: any) => handleInspect(row.sourceItem, row.assetClass)}
+              rowAriaLabel={(row: any) => `Inspect ${row.title} transaction`}
+            />
+          )}
         </div>
       )}
-
-      {/* Premium Drill-Down Stat Cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 14,
-          marginBottom: 24,
-        }}
-      >
-        <StatCard
-          icon={<TrendingUp />}
-          label="Stocks Bought"
-          value={String(stocksBoughtInFY.length)}
-          sub={
-            <>
-              {fyLabel} ·{" "}
-              <Prv>
-                ₹{totalStocksInvested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-              </Prv>
-            </>
-          }
-          color={THEME.accent}
-          active={activeSection === "stocks_bought"}
-          onClick={() => setActiveSection("stocks_bought")}
-        />
-        <StatCard
-          icon={<ArrowLeftRight />}
-          label="Stocks Sold"
-          value={String(stocksSoldInFY.length)}
-          sub={
-            <>
-              Realized:{" "}
-              <Prv>
-                {stocksRealizedPnl >= 0 ? "+" : ""}₹
-                {Math.abs(stocksRealizedPnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-              </Prv>
-            </>
-          }
-          subColor={stocksRealizedPnl >= 0 ? THEME.sage : THEME.rust}
-          color={THEME.accent}
-          active={activeSection === "stocks_sold"}
-          onClick={() => setActiveSection("stocks_sold")}
-        />
-        <StatCard
-          icon={<BarChart3 />}
-          label="MF Bought"
-          value={String(mfBoughtInFY.length)}
-          sub={
-            <>
-              {fyLabel} ·{" "}
-              <Prv>₹{totalMFInvested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</Prv>
-            </>
-          }
-          color={THEME.accent}
-          active={activeSection === "mf_bought"}
-          onClick={() => setActiveSection("mf_bought")}
-        />
-        <StatCard
-          icon={<ArrowLeftRight />}
-          label="MF Redeemed"
-          value={String(mfSoldInFY.length)}
-          sub={
-            <>
-              Realized:{" "}
-              <Prv>
-                {mfRealizedPnl >= 0 ? "+" : ""}₹
-                {Math.abs(mfRealizedPnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-              </Prv>
-            </>
-          }
-          subColor={mfRealizedPnl >= 0 ? THEME.sage : THEME.rust}
-          color={THEME.accent}
-          active={activeSection === "mf_sold"}
-          onClick={() => setActiveSection("mf_sold")}
-        />
-        <StatCard
-          icon={<Coins />}
-          label="Bank & Cash Ledger"
-          value={String(cashTransactionsInFY.length)}
-          sub={
-            <Prv>
-              In +₹{totalCredits.toLocaleString("en-IN", { maximumFractionDigits: 0 })} · Out -₹
-              {totalDebits.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-            </Prv>
-          }
-          subColor={THEME.sage}
-          color={THEME.cyan}
-          active={activeSection === "cash_ledger"}
-          onClick={() => setActiveSection("cash_ledger")}
-        />
-      </div>
 
       {/* ── STOCKS BOUGHT ── */}
       {show("stocks_bought") && (
@@ -1177,8 +1456,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                         s.buyDate,
                         s.avgPrice,
                         inv,
-                        // Blank (not 0) when unpriced — matches the "—" the on-screen
-                        // table shows instead of implying a fabricated full loss.
                         cp || "",
                         cp ? (cp - Number(s.avgPrice)) * Number(s.qty) : "",
                       ];
@@ -1201,40 +1478,43 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                   key: "company",
                   header: "Company",
                   accessor: (s: any) => (
-                    <span>
-                      <span style={{ fontWeight: 700, color: THEME.ink }}>
-                        {s.symbol?.replace(/\.(NS|BO)$/i, "")}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 9,
-                          marginLeft: 6,
-                          color: THEME.muted,
-                          background: "var(--surface-2)",
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {s.exchange || "NSE"}
-                      </span>
-                      {s.isSold && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <StockLogo yfSym={s.symbol} size={28} />
+                      <div>
+                        <span style={{ fontWeight: 700, color: THEME.ink }}>
+                          {s.symbol?.replace(/\.(NS|BO)$/i, "")}
+                        </span>
                         <span
                           style={{
                             fontSize: 9,
                             marginLeft: 6,
                             color: THEME.muted,
-                            background: "color-mix(in srgb, var(--surface-2) 80%, transparent)",
-                            border: `1px solid ${THEME.line}`,
+                            background: "var(--surface-2)",
                             padding: "2px 6px",
                             borderRadius: 4,
                             fontWeight: 700,
                           }}
                         >
-                          Sold
+                          {s.exchange || "NSE"}
                         </span>
-                      )}
-                    </span>
+                        {s.isSold && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              marginLeft: 6,
+                              color: THEME.muted,
+                              background: "color-mix(in srgb, var(--surface-2) 80%, transparent)",
+                              border: `1px solid ${THEME.line}`,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Sold
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   ),
                 },
                 {
@@ -1248,7 +1528,9 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                   header: "Buy Date",
                   align: "right",
                   sortable: true,
-                  accessor: (s: any) => <span style={{ color: THEME.muted }}>{fmtDate(s.buyDate)}</span>,
+                  accessor: (s: any) => (
+                    <span style={{ color: THEME.muted, fontSize: 12 }}>{fmtDate(s.buyDate)}</span>
+                  ),
                 },
                 {
                   key: "buyPrice",
@@ -1282,7 +1564,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     if (s.isSold) {
                       return (
                         <span style={{ color: THEME.muted, fontSize: 12 }}>
-                          {s.sellPrice ? <Prv>Sold @ ₹{Number(s.sellPrice).toFixed(2)}</Prv> : "Sold"}
+                          {s.sellPrice ? <Prv>Sold @ ₹${Number(s.sellPrice).toFixed(2)}</Prv> : "Sold"}
                         </span>
                       );
                     }
@@ -1309,7 +1591,12 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     const val = Number(s.qty) * curr;
                     const pnl = val - inv;
                     return curr ? (
-                      <span style={{ color: pnl >= 0 ? THEME.sage : THEME.rust, fontWeight: 800 }}>
+                      <span
+                        style={{
+                          color: pnl >= 0 ? THEME.sage : THEME.rust,
+                          fontWeight: 800,
+                        }}
+                      >
                         <Prv>
                           {pnl >= 0 ? "+" : ""}₹
                           {Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -1327,13 +1614,18 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               sortKey={sortState.stocks_bought?.key || null}
               sortDirection={sortState.stocks_bought?.dir || "asc"}
               onSortChange={(key: any) => toggleSort("stocks_bought", key)}
+              onRowClick={(s: any) => handleInspect(s, "stock")}
+              rowAriaLabel={(s: any) => `Inspect ${s.symbol} purchase details`}
               footer={
                 <>
                   <tr style={{ background: "var(--surface-1)" }}>
-                    <td colSpan={4} style={{ ...td, paddingLeft: 16, fontWeight: 800, color: THEME.ink }}>
+                    <td
+                      colSpan={4}
+                      style={{ ...td, paddingLeft: 16, fontWeight: 800, color: THEME.ink }}
+                    >
                       Total Invested
                     </td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 900, fontSize: 15 }}>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 900, fontSize: 14.5 }}>
                       <Prv>
                         ₹
                         {stocksBoughtTotals.invested.toLocaleString("en-IN", {
@@ -1348,7 +1640,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                         textAlign: "right",
                         fontWeight: 900,
                         color: stocksBoughtTotals.pnl >= 0 ? THEME.sage : THEME.rust,
-                        fontSize: 15,
+                        fontSize: 14.5,
                       }}
                     >
                       {stocksBoughtTotals.hasCurr ? (
@@ -1468,6 +1760,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
             sortKey={sortState.stocks_sold?.key}
             sortDir={sortState.stocks_sold?.dir}
             onSort={(key) => toggleSort("stocks_sold", key)}
+            onInspect={(item) => handleInspect(item, "stock_sold")}
           />
         </div>
       )}
@@ -1535,8 +1828,6 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                         m.buyDate,
                         buyNav,
                         inv,
-                        // Blank (not 0) when unpriced — matches the "—" the on-screen
-                        // table shows instead of implying a fabricated full loss.
                         currNav || "",
                         currNav ? (currNav - buyNav) * Number(m.units) : "",
                       ];
@@ -1559,40 +1850,45 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                   key: "scheme",
                   header: "Scheme",
                   accessor: (m: any) => (
-                    <span>
-                      <span style={{ fontWeight: 700, color: THEME.ink }}>{m.name || m.scheme}</span>
-                      {(m.category || m.mfType || m.type) && (
-                        <span
-                          style={{
-                            fontSize: 9,
-                            marginLeft: 6,
-                            color: THEME.muted,
-                            background: "var(--surface-2)",
-                            padding: "2px 6px",
-                            borderRadius: 4,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {m.category || m.mfType || m.type}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <MFLogo fundName={m.name || m.scheme} size={28} />
+                      <div>
+                        <span style={{ fontWeight: 700, color: THEME.ink }}>
+                          {m.name || m.scheme}
                         </span>
-                      )}
-                      {m.isSold && (
-                        <span
-                          style={{
-                            fontSize: 9,
-                            marginLeft: 6,
-                            color: THEME.muted,
-                            background: "color-mix(in srgb, var(--surface-2) 80%, transparent)",
-                            border: `1px solid ${THEME.line}`,
-                            padding: "2px 6px",
-                            borderRadius: 4,
-                            fontWeight: 700,
-                          }}
-                        >
-                          Redeemed
-                        </span>
-                      )}
-                    </span>
+                        {(m.category || m.mfType || m.type) && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              marginLeft: 6,
+                              color: THEME.muted,
+                              background: "var(--surface-2)",
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {m.category || m.mfType || m.type}
+                          </span>
+                        )}
+                        {m.isSold && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              marginLeft: 6,
+                              color: THEME.muted,
+                              background: "color-mix(in srgb, var(--surface-2) 80%, transparent)",
+                              border: `1px solid ${THEME.line}`,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Redeemed
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   ),
                 },
                 {
@@ -1608,7 +1904,9 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                   header: "Buy Date",
                   align: "right",
                   sortable: true,
-                  accessor: (m: any) => <span style={{ color: THEME.muted }}>{fmtDate(m.buyDate)}</span>,
+                  accessor: (m: any) => (
+                    <span style={{ color: THEME.muted, fontSize: 12 }}>{fmtDate(m.buyDate)}</span>
+                  ),
                 },
                 {
                   key: "buyNav",
@@ -1654,7 +1952,11 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     if (m.isSold) {
                       return (
                         <span style={{ color: THEME.muted, fontSize: 12 }}>
-                          {m.sellNav ? <Prv>Redeemed @ ₹{Number(m.sellNav).toFixed(4)}</Prv> : "Redeemed"}
+                          {m.sellNav ? (
+                            <Prv>Redeemed @ ₹{Number(m.sellNav).toFixed(4)}</Prv>
+                          ) : (
+                            "Redeemed"
+                          )}
                         </span>
                       );
                     }
@@ -1684,7 +1986,12 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     const val = Number(m.units) * currNav;
                     const pnl = val - inv;
                     return currNav ? (
-                      <span style={{ color: pnl >= 0 ? THEME.sage : THEME.rust, fontWeight: 800 }}>
+                      <span
+                        style={{
+                          color: pnl >= 0 ? THEME.sage : THEME.rust,
+                          fontWeight: 800,
+                        }}
+                      >
                         <Prv>
                           {pnl >= 0 ? "+" : ""}₹
                           {Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -1702,13 +2009,18 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               sortKey={sortState.mf_bought?.key || null}
               sortDirection={sortState.mf_bought?.dir || "asc"}
               onSortChange={(key: any) => toggleSort("mf_bought", key)}
+              onRowClick={(m: any) => handleInspect(m, "mf")}
+              rowAriaLabel={(m: any) => `Inspect ${m.name || m.scheme} investment details`}
               footer={
                 <>
                   <tr style={{ background: "var(--surface-1)" }}>
-                    <td colSpan={4} style={{ ...td, paddingLeft: 16, fontWeight: 800, color: THEME.ink }}>
+                    <td
+                      colSpan={4}
+                      style={{ ...td, paddingLeft: 16, fontWeight: 800, color: THEME.ink }}
+                    >
                       Total Invested
                     </td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 900, fontSize: 15 }}>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 900, fontSize: 14.5 }}>
                       <Prv>
                         ₹
                         {mfBoughtTotals.invested.toLocaleString("en-IN", {
@@ -1723,7 +2035,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                         textAlign: "right",
                         fontWeight: 900,
                         color: mfBoughtTotals.pnl >= 0 ? THEME.sage : THEME.rust,
-                        fontSize: 15,
+                        fontSize: 14.5,
                       }}
                     >
                       {mfBoughtTotals.hasCurr ? (
@@ -1843,6 +2155,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
             sortKey={sortState.mf_sold?.key}
             sortDir={sortState.mf_sold?.dir}
             onSort={(key) => toggleSort("mf_sold", key)}
+            onInspect={(item) => handleInspect(item, "mf_sold")}
           />
         </div>
       )}
@@ -1954,7 +2267,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                       <span
                         style={{
                           padding: "3px 10px",
-                          borderRadius: "var(--radius-xs)",
+                          borderRadius: "var(--radius-xs, 6px)",
                           fontSize: 10,
                           fontWeight: 800,
                           textTransform: "uppercase",
@@ -1980,7 +2293,13 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     const amount = Number(t.amount || 0);
                     const isCredit = t.type === "credit";
                     return (
-                      <span style={{ color: isCredit ? THEME.sage : THEME.rust, fontWeight: 800, fontSize: 14 }}>
+                      <span
+                        style={{
+                          color: isCredit ? THEME.sage : THEME.rust,
+                          fontWeight: 800,
+                          fontSize: 14,
+                        }}
+                      >
                         {isCredit ? "+" : "-"}
                         <Money value={amount} variant="full" />
                       </span>
@@ -2013,7 +2332,9 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               hideSearch
               keyExtractor={(t: any) => t.id}
               onRowClick={(t: any) => setViewCashTxnId(t.id)}
-              rowAriaLabel={(t: any) => `View details for ${t.note || "transaction"} on ${fmtDate(t.date)}`}
+              rowAriaLabel={(t: any) =>
+                `View details for ${t.note || "transaction"} on ${fmtDate(t.date)}`
+              }
               sortKey={sortState.cash_ledger?.key || null}
               sortDirection={sortState.cash_ledger?.dir || "asc"}
               onSortChange={(key: any) => toggleSort("cash_ledger", key)}
@@ -2076,10 +2397,14 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                   <td style={td}></td>
                   <td style={{ ...td, textAlign: "right" }}>
                     <div style={{ fontSize: 13, fontWeight: 900, color: THEME.sage }}>
-                      <Prv>+₹{totalCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</Prv>
+                      <Prv>
+                        +₹{totalCredits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                      </Prv>
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: THEME.rust }}>
-                      <Prv>-₹{totalDebits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</Prv>
+                      <Prv>
+                        -₹{totalDebits.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                      </Prv>
                     </div>
                     <div
                       style={{
@@ -2093,7 +2418,9 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     >
                       <Prv>
                         Net {cashNetFlow >= 0 ? "+" : ""}₹
-                        {Math.abs(cashNetFlow).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        {Math.abs(cashNetFlow).toLocaleString("en-IN", {
+                          maximumFractionDigits: 2,
+                        })}
                       </Prv>
                     </div>
                   </td>
@@ -2104,6 +2431,8 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
           )}
         </div>
       )}
+
+      {/* ── DETAIL DRAWER: CASH & BANK TRANSACTION ── */}
       {viewCashTxnId &&
         (() => {
           const t = cashTransactionsInFY.find((tx: any) => tx.id === viewCashTxnId);
@@ -2122,13 +2451,15 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                 }}
               >
                 <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>{label}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, textAlign: "right" }}>
+                <span
+                  style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, textAlign: "right" }}
+                >
                   {value}
                 </span>
               </div>
             ) : null;
           return (
-            <Drawer title="Transaction Details" onClose={() => setViewCashTxnId(null)}>
+            <Drawer title="Bank Transaction Details" onClose={() => setViewCashTxnId(null)}>
               <div
                 style={{
                   textAlign: "center",
@@ -2160,7 +2491,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                       flexWrap: "wrap",
                     }}
                   >
-                    {t.category === "Transfer" && <Badge variant="accent">↔ Transfer</Badge>}
+                    {t.category === "Transfer" && <Badge variant="accent">Internal Transfer</Badge>}
                     {t.linkedType && (
                       <Badge
                         variant="accent"
@@ -2172,17 +2503,8 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                   </div>
                 )}
               </div>
-              {row("Note", t.note)}
-              {row(
-                "Date",
-                t.date
-                  ? new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })
-                  : null
-              )}
+              {row("Note / Label", t.note)}
+              {row("Date", fmtDate(t.date))}
               {row("Category", t.category)}
               {row(
                 "Account",
@@ -2195,7 +2517,7 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
               )}
               {row("Narration", t.narration)}
               {row("Description", t.description)}
-              {row("Reference", t.referenceNumber)}
+              {row("Reference No.", t.referenceNumber)}
               <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
                 <Button
                   variant="secondary"
@@ -2210,12 +2532,204 @@ export function TxnHistoryTab({ state, removeItem, marketData = {}, showToast }:
                     });
                   }}
                 >
-                  Delete
+                  Delete Transaction
                 </Button>
               </div>
             </Drawer>
           );
         })()}
+
+      {/* ── DETAIL DRAWER: STOCK TRANSACTION ── */}
+      {inspectedStock &&
+        (() => {
+          const s = inspectedStock;
+          const isSold = Boolean(s.sellDate || s.isSold);
+          const cp = livePrice(s, marketData);
+          const buyPrice = Number(s.buyPrice || s.avgPrice || 0);
+          const sellPrice = Number(s.sellPrice || 0);
+          const qty = Number(s.qty || 0);
+          const invested = qty * buyPrice;
+          const currentOrRealizedVal = isSold ? qty * sellPrice : cp ? qty * cp : 0;
+          const profit = isSold ? Number(s.profit || currentOrRealizedVal - invested) : currentOrRealizedVal - invested;
+          const profitPct = invested > 0 ? (profit / invested) * 100 : 0;
+
+          const row = (label: string, value: React.ReactNode) =>
+            value ? (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  padding: "12px 0",
+                  borderBottom: `1px solid ${THEME.line}`,
+                }}
+              >
+                <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>{label}</span>
+                <span
+                  style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, textAlign: "right" }}
+                >
+                  {value}
+                </span>
+              </div>
+            ) : null;
+
+          return (
+            <Drawer title="Stock Holding Details" onClose={() => setInspectedStock(null)}>
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "8px 0 20px",
+                  borderBottom: `1px solid ${THEME.line}`,
+                  marginBottom: 4,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+                  <StockLogo yfSym={s.symbol} size={44} />
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: THEME.ink }}>
+                  {s.symbol?.replace(/\.(NS|BO)$/i, "")}
+                </div>
+                <div style={{ fontSize: 12, color: THEME.muted, marginTop: 2 }}>
+                  {s.exchange || "NSE"} · {isSold ? "Realized Sale" : "Active Holding"}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: 26,
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                    color: profit >= 0 ? THEME.sage : THEME.rust,
+                    marginTop: 10,
+                  }}
+                >
+                  <Prv>
+                    {profit >= 0 ? "+" : ""}₹
+                    {Math.abs(profit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                    {" "}
+                    <span style={{ fontSize: 15, fontWeight: 600 }}>
+                      ({profit >= 0 ? "+" : ""}{profitPct.toFixed(2)}%)
+                    </span>
+                  </Prv>
+                </div>
+              </div>
+              {row("Quantity", `${qty} shares`)}
+              {row("Buy Date", fmtDate(s.buyDate))}
+              {row("Buy Price", `₹${buyPrice.toFixed(2)}`)}
+              {row("Total Invested", `₹${invested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)}
+              {isSold && row("Sell Date", fmtDate(s.sellDate))}
+              {isSold && row("Sell Price", `₹${sellPrice.toFixed(2)}`)}
+              {!isSold && cp > 0 && row("Current Live Price", `₹${cp.toFixed(2)}`)}
+              {row("Broker / Demat", s.broker || "Demat")}
+              {row(
+                "Tax Classification",
+                s.buyDate ? (
+                  <Badge variant="accent">
+                    {(() => {
+                      const endD = isSold && s.sellDate ? new Date(s.sellDate) : new Date();
+                      const startD = new Date(s.buyDate);
+                      const diffDays = Math.floor((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24));
+                      return diffDays >= 365 ? `LTCG (${diffDays} days)` : `STCG (${diffDays} days)`;
+                    })()}
+                  </Badge>
+                ) : null
+              )}
+            </Drawer>
+          );
+        })()}
+
+      {/* ── DETAIL DRAWER: MUTUAL FUND TRANSACTION ── */}
+      {inspectedMF &&
+        (() => {
+          const m = inspectedMF;
+          const isSold = Boolean(m.sellDate || m.isSold);
+          const buyNav = m.buyNav
+            ? Number(m.buyNav)
+            : m.invested && m.units
+              ? Number(m.invested) / Number(m.units)
+              : 0;
+          const sellNav = Number(m.sellNav || 0);
+          const currNav = Number(m.currentNav || 0);
+          const units = Number(m.units || 0);
+          const invested = units * buyNav;
+          const currentOrRealizedVal = isSold ? units * sellNav : currNav ? units * currNav : 0;
+          const profit = isSold ? Number(m.profit || currentOrRealizedVal - invested) : currentOrRealizedVal - invested;
+          const profitPct = invested > 0 ? (profit / invested) * 100 : 0;
+
+          const row = (label: string, value: React.ReactNode) =>
+            value ? (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  padding: "12px 0",
+                  borderBottom: `1px solid ${THEME.line}`,
+                }}
+              >
+                <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>{label}</span>
+                <span
+                  style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, textAlign: "right" }}
+                >
+                  {value}
+                </span>
+              </div>
+            ) : null;
+
+          return (
+            <Drawer title="Mutual Fund Holding Details" onClose={() => setInspectedMF(null)}>
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "8px 0 20px",
+                  borderBottom: `1px solid ${THEME.line}`,
+                  marginBottom: 4,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+                  <MFLogo fundName={m.name || m.scheme} size={44} />
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: THEME.ink }}>
+                  {m.name || m.scheme}
+                </div>
+                <div style={{ fontSize: 12, color: THEME.muted, marginTop: 2 }}>
+                  {m.category || m.mfType || m.type || "Equity"} · {isSold ? "Redeemed" : "Active Holding"}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: 26,
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                    color: profit >= 0 ? THEME.sage : THEME.rust,
+                    marginTop: 10,
+                  }}
+                >
+                  <Prv>
+                    {profit >= 0 ? "+" : ""}₹
+                    {Math.abs(profit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                    {" "}
+                    <span style={{ fontSize: 15, fontWeight: 600 }}>
+                      ({profit >= 0 ? "+" : ""}{profitPct.toFixed(2)}%)
+                    </span>
+                  </Prv>
+                </div>
+              </div>
+              {row("Units", `${units.toFixed(3)} units`)}
+              {row("Buy Date", fmtDate(m.buyDate))}
+              {row("Buy NAV", `₹${buyNav.toFixed(4)}`)}
+              {row("Total Invested", `₹${invested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)}
+              {isSold && row("Redemption Date", fmtDate(m.sellDate))}
+              {isSold && row("Redemption NAV", `₹${sellNav.toFixed(4)}`)}
+              {!isSold && currNav > 0 && row("Current NAV", `₹${currNav.toFixed(4)}`)}
+              {row("Category / Type", m.category || m.mfType || m.type || "Mutual Fund")}
+              {row("Folio / Broker", m.folioNumber || m.broker || "Direct")}
+            </Drawer>
+          );
+        })()}
+
+      {/* Confirmation Dialog */}
       {confirmDeleteTxn && (
         <ConfirmDialog
           message={confirmDeleteTxn.message}
