@@ -752,8 +752,14 @@ export function BanksTab({
   const last3mDebits = (state.transactions || [])
     .filter((t: any) => t.date >= threeMonthsAgoStr && t.type === "debit" && !isTransferCat(t.category))
     .reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
-  const avgMonthlyBurn = last3mDebits > 0 ? last3mDebits / 3 : monthlyExpense > 0 ? monthlyExpense : 1;
+  const avgMonthlyBurn = last3mDebits > 0 ? last3mDebits / 3 : monthlyExpense > 0 ? monthlyExpense : 0;
   const cashRunwayMonths = avgMonthlyBurn > 0 ? totalBalance / avgMonthlyBurn : 0;
+  const isHealthyRunway = avgMonthlyBurn <= 0 && totalBalance > 0;
+  const runwayDisplay = isHealthyRunway
+    ? "> 24 Months"
+    : cashRunwayMonths >= 36
+      ? "> 36 Months"
+      : `${cashRunwayMonths.toFixed(1)} Months`;
 
   // Animated numbers
   const animTotalBalance = useAnimatedNumber(totalBalance);
@@ -1108,17 +1114,17 @@ export function BanksTab({
 
         <StatCard
           label="Liquid Cash Runway"
-          value={`${cashRunwayMonths.toFixed(1)} Months`}
-          numericValue={cashRunwayMonths}
-          formatValue={(v: number) => `${v.toFixed(1)} Months`}
+          value={runwayDisplay}
           icon={<ShieldCheck />}
-          color={cashRunwayMonths >= 6 ? THEME.sage : cashRunwayMonths >= 3 ? THEME.gold : THEME.rust}
+          color={isHealthyRunway || cashRunwayMonths >= 6 ? THEME.sage : cashRunwayMonths >= 3 ? THEME.gold : THEME.rust}
           sub={
-            cashRunwayMonths >= 6
-              ? "Strong safety buffer"
-              : cashRunwayMonths >= 3
-                ? "Moderate buffer"
-                : "Low runway (<3 mo)"
+            isHealthyRunway
+              ? "Zero recent outflows (Strong buffer)"
+              : cashRunwayMonths >= 6
+                ? "Strong safety buffer (6+ mo)"
+                : cashRunwayMonths >= 3
+                  ? "Moderate buffer (3-6 mo)"
+                  : "Low runway (<3 mo)"
           }
         />
       </div>
@@ -1759,29 +1765,6 @@ export function BanksTab({
                 >
                   Filtered: {state.bankAccounts.find((b: any) => b.id === filterAcc)?.bankName} ✕
                 </Badge>
-              )}
-
-              {filterAcc !== "all" && accTxnIdsForDelete.length > 0 && (
-                <button
-                  onClick={() => setConfirmDeleteAllAcc(true)}
-                  className="icon-btn danger"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 5,
-                    padding: "4px 10px",
-                    borderRadius: 8,
-                    background: "transparent",
-                    border: `1.5px solid ${THEME.rust}`,
-                    color: THEME.rust,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                  title="Clear all transactions for this account"
-                >
-                  <Trash2 size={11} /> Clear Account Ledger
-                </button>
               )}
             </div>
 
@@ -3159,6 +3142,82 @@ export function BanksTab({
                 })}
               </div>
             )}
+          </Card>
+
+          {/* Advanced Danger Zone / Statement Reset Tool (Safely isolated here) */}
+          <Card
+            style={{
+              padding: 20,
+              background: "var(--surface-0)",
+              border: `1.5px solid color-mix(in srgb, ${THEME.rust} 25%, ${THEME.line})`,
+              borderRadius: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 8,
+                  background: `color-mix(in srgb, ${THEME.rust} 12%, transparent)`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: THEME.rust,
+                  flexShrink: 0,
+                  marginTop: 2,
+                }}
+              >
+                <Trash2 size={16} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: THEME.ink }}>
+                  Advanced Statement Maintenance (Purge Erroneous CSV Import)
+                </div>
+                <div style={{ fontSize: 12, color: THEME.muted, marginTop: 4, lineHeight: 1.5 }}>
+                  This tool is strictly meant for resetting an account if you previously uploaded an incorrect CSV bank statement. To protect your data against accidental clicks, this action requires picking the specific bank account and confirming the safety dialog.
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    marginTop: 14,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <select
+                    style={{ ...inputStyle, width: "auto", minWidth: 200, height: 36, fontWeight: 600 }}
+                    value={filterAcc}
+                    onChange={(e) => setFilterAcc(e.target.value)}
+                  >
+                    <option value="all">— Select an account to reset —</option>
+                    {(state.bankAccounts || []).map((a: any) => (
+                      <option key={a.id} value={a.id}>
+                        {accountLabel(a)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={filterAcc === "all" || accTxnIdsForDelete.length === 0}
+                    onClick={() => setConfirmDeleteAllAcc(true)}
+                    style={{
+                      borderColor: THEME.rust,
+                      color: THEME.rust,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      opacity: filterAcc === "all" || accTxnIdsForDelete.length === 0 ? 0.4 : 1,
+                    }}
+                  >
+                    Purge {accTxnIdsForDelete.length} Statement Transactions
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
         </div>
       )}
