@@ -1,0 +1,296 @@
+/* eslint-disable */
+import React, { useState } from "react";
+import { User, Phone, Tag, FileText, Sparkles } from "lucide-react";
+import { THEME } from "../../utils/constants";
+import { useMasterData, formatProfileOption } from "../../utils/masterData";
+import { Modal, ModalActions } from "../ui/Modal";
+import { Field } from "../ui/Form";
+
+const RELATIONSHIP_OPTIONS = [
+  "Friend",
+  "Family",
+  "Relative",
+  "Colleague",
+  "Business Partner",
+  "Neighbor",
+  "Other",
+];
+
+interface InformalPersonModalProps {
+  direction: "borrowed" | "lent";
+  initial?: any | null;
+  onSave: (personData: any) => Promise<void> | void;
+  onClose: () => void;
+  saving?: boolean;
+}
+
+export function InformalPersonModal({
+  direction,
+  initial = null,
+  onSave,
+  onClose,
+  saving = false,
+}: InformalPersonModalProps) {
+  const { familyProfiles } = useMasterData();
+  const isBorrowed = direction === "borrowed";
+  const personRole = isBorrowed ? "Lender (Person borrowed from)" : "Borrower (Person lent to)";
+  const shortLabel = isBorrowed ? "Lender" : "Borrower";
+
+  const [person, setPerson] = useState(initial?.person || initial?.name || "");
+  const [owner, setOwner] = useState(initial?.owner || "self");
+  const [relationship, setRelationship] = useState(initial?.relationship || "Friend");
+  const [phone, setPhone] = useState(initial?.phone || "");
+  const [note, setNote] = useState(initial?.note || "");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    const trimmedName = person.trim();
+    if (!trimmedName) {
+      setError(`Please enter the ${shortLabel.toLowerCase()}'s name`);
+      return;
+    }
+    setError(null);
+
+    const payload: any = {
+      person: trimmedName,
+      name: trimmedName, // For backwards compatibility
+      owner,
+      relationship,
+      phone: phone.trim(),
+      note: note.trim(),
+    };
+
+    // If new person, initialize tranches and payments arrays
+    if (!initial) {
+      payload.tranches = [];
+      payload.payments = [];
+    }
+
+    await onSave(payload);
+  };
+
+  return (
+    <Modal
+      title={initial ? `Edit ${shortLabel}` : `Add New ${shortLabel}`}
+      onClose={onClose}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Helper Banner */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            background: isBorrowed
+              ? "color-mix(in srgb, var(--t-rust) 8%, transparent)"
+              : "color-mix(in srgb, var(--t-accent) 8%, transparent)",
+            borderRadius: 8,
+            border: `1px solid ${
+              isBorrowed
+                ? "color-mix(in srgb, var(--t-rust) 20%, transparent)"
+                : "color-mix(in srgb, var(--t-accent) 20%, transparent)"
+            }`,
+            fontSize: 12,
+            color: isBorrowed ? "var(--t-rust)" : "var(--t-accent)",
+            fontWeight: 600,
+          }}
+        >
+          <Sparkles size={16} style={{ flexShrink: 0 }} />
+          <span>
+            {isBorrowed
+              ? "Track loans or money you have received from this person."
+              : "Track personal loans or money given to this person."}
+          </span>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              padding: "8px 12px",
+              background: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              borderRadius: 6,
+              color: "var(--t-rust)",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* Profile / Owner */}
+        <Field label="Household Owner / Profile">
+          <select
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--t-line)",
+              background: "var(--t-card-bg)",
+              color: "var(--t-ink)",
+              fontSize: 13,
+              outline: "none",
+            }}
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+          >
+            {familyProfiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {formatProfileOption(p)}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        {/* Person Name */}
+        <Field label={`${shortLabel} Name`}>
+          <div style={{ position: "relative" }}>
+            <input
+              style={{
+                width: "100%",
+                padding: "10px 12px 10px 36px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--t-line)",
+                background: "var(--t-card-bg)",
+                color: "var(--t-ink)",
+                fontSize: 13,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+              placeholder={`e.g. ${isBorrowed ? "Uncle Ramesh, Rohit" : "Rajesh Sharma, Priya"}`}
+              value={person}
+              onChange={(e) => {
+                setPerson(e.target.value);
+                if (error) setError(null);
+              }}
+              autoFocus
+            />
+            <User
+              size={15}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--t-muted)",
+              }}
+            />
+          </div>
+        </Field>
+
+        {/* Grid: Relationship & Phone */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Relationship">
+            <div style={{ position: "relative" }}>
+              <select
+                style={{
+                  width: "100%",
+                  padding: "10px 12px 10px 36px",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--t-line)",
+                  background: "var(--t-card-bg)",
+                  color: "var(--t-ink)",
+                  fontSize: 13,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+                value={relationship}
+                onChange={(e) => setRelationship(e.target.value)}
+              >
+                {RELATIONSHIP_OPTIONS.map((rel) => (
+                  <option key={rel} value={rel}>
+                    {rel}
+                  </option>
+                ))}
+              </select>
+              <Tag
+                size={15}
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "var(--t-muted)",
+                }}
+              />
+            </div>
+          </Field>
+
+          <Field label="Phone / WhatsApp (optional)">
+            <div style={{ position: "relative" }}>
+              <input
+                style={{
+                  width: "100%",
+                  padding: "10px 12px 10px 36px",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--t-line)",
+                  background: "var(--t-card-bg)",
+                  color: "var(--t-ink)",
+                  fontSize: 13,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+                type="tel"
+                placeholder="e.g. +91 9876543210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <Phone
+                size={15}
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "var(--t-muted)",
+                }}
+              />
+            </div>
+          </Field>
+        </div>
+
+        {/* Notes */}
+        <Field label="Notes / Purpose (optional)">
+          <div style={{ position: "relative" }}>
+            <input
+              style={{
+                width: "100%",
+                padding: "10px 12px 10px 36px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--t-line)",
+                background: "var(--t-card-bg)",
+                color: "var(--t-ink)",
+                fontSize: 13,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+              placeholder="e.g. Medical emergency assistance, Home renovation"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+            <FileText
+              size={15}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--t-muted)",
+              }}
+            />
+          </div>
+        </Field>
+
+        <ModalActions
+          onSave={handleSubmit}
+          onClose={onClose}
+          saveLabel={initial ? "Save Changes" : `Add ${shortLabel}`}
+          disabled={saving || !person.trim()}
+          loading={saving}
+        />
+      </div>
+    </Modal>
+  );
+}
