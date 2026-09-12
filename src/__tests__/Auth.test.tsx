@@ -19,6 +19,13 @@ describe("Auth Component UI & Rendering", () => {
     expect(html).toContain("Unify your wealth.");
     expect(html).toContain("Live Portfolio Summary");
     expect(html).toContain("1,48,50,000");
+    expect(html).toContain("+18.4% YoY");
+    expect(html).toContain("Equities ₹62.3L");
+
+    // Pillars & Security
+    expect(html).toContain("Automated Multi-Account Reconciliation");
+    expect(html).toContain("Family Entities &amp; Nominee Tracking");
+    expect(html).toContain("Zero-Telemetry 256-Bit Vault Security");
 
     // Form Panel elements
     expect(html).toContain("Sign In");
@@ -28,6 +35,7 @@ describe("Auth Component UI & Rendering", () => {
     expect(html).toContain("Remember my email");
     expect(html).toContain("Forgot password?");
     expect(html).toContain("Open Interactive Sandbox Demo");
-    expect(html).toContain("256-bit Encryption");
+    expect(html).toContain("Pre-loaded with sample assets, portfolios &amp; live charts");
+    expect(html).toContain("256-bit Encryption • Zero-Telemetry Privacy • End-to-End Secure");
   });
 });
