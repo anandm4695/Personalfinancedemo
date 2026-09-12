@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -24,6 +24,19 @@ import {
   ExternalLink,
   AlertCircle,
   FileText,
+  Sparkles,
+  RefreshCw,
+  SlidersHorizontal,
+  Layers,
+  Calendar,
+  Filter,
+  Search,
+  Zap,
+  RotateCcw,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+  SlidersVertical,
 } from "lucide-react";
 import {
   Bar,
@@ -35,6 +48,9 @@ import {
   Legend,
   Line,
   ComposedChart,
+  AreaChart,
+  Area,
+  ReferenceLine,
 } from "recharts";
 import { THEME } from "../../utils/constants";
 import {
@@ -77,7 +93,9 @@ const MONTH_NAMES = [
   "Dec",
 ];
 
-/** Returns an array of { year, month, label } for the next N months starting from today. */
+export type HorizonMonths = 1 | 3 | 6 | 12;
+
+/** Returns an array of { year, month, label, key } for the next N months starting from today. */
 function getFutureMonths(
   count: number
 ): { year: number; month: number; label: string; key: string }[] {
@@ -112,13 +130,6 @@ function isDateInRange(dateStr: string, months: { key: string }[]): boolean {
   return months.some((m) => m.key === ym);
 }
 
-/** Find which month index a date falls into. Returns -1 if not in range. */
-function getMonthIndex(dateStr: string, months: { key: string }[]): number {
-  if (!dateStr) return -1;
-  const ym = dateStr.slice(0, 7);
-  return months.findIndex((m) => m.key === ym);
-}
-
 /** Convert frequency to monthly multiplier. */
 function freqToMonthly(freq: string, amount: number): number {
   const f = (freq || "monthly").toLowerCase();
@@ -143,46 +154,51 @@ const fmtDate = (dateStr: string) => {
   }
 };
 
-// ── Component ────────────────────────────────────────────────────────────────
-
-// ── Custom Tooltip for Chart ──────────────────────────────────────────────────
+// ── Custom Tooltip for Recharts ──────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload || !payload.length) return null;
   return (
     <div
       style={{
-        background: "color-mix(in srgb, var(--surface-0) 90%, transparent)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
+        background: "color-mix(in srgb, var(--surface-0) 94%, transparent)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
         border: `1.5px solid var(--t-line)`,
-        borderRadius: "12px",
-        padding: "14px 16px",
+        borderRadius: "14px",
+        padding: "14px 18px",
         boxShadow: "var(--shadow-lg)",
         display: "flex",
         flexDirection: "column",
         gap: "10px",
-        minWidth: "220px",
+        minWidth: "240px",
       }}
     >
       <div
         style={{
           fontSize: "12px",
-          fontWeight: 700,
+          fontWeight: 800,
           color: "var(--t-muted)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
           borderBottom: `1px solid var(--t-line)`,
-          paddingBottom: "6px",
+          paddingBottom: "8px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         }}
       >
-        {label} Projection
+        <span>{label}</span>
+        <span style={{ fontSize: "10.5px", fontWeight: 600, color: "var(--t-accent)" }}>Forecast</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {payload.map((entry: any, index: number) => {
-          const color =
-            entry.dataKey === "Inflow"
-              ? "var(--t-sage)"
-              : entry.dataKey === "Outflow"
-                ? "var(--t-rust)"
-                : "var(--t-accent)";
+          let color = entry.color || "var(--t-accent)";
+          if (entry.dataKey === "Inflow") color = "var(--t-sage)";
+          else if (entry.dataKey === "Outflow") color = "var(--t-rust)";
+          else if (entry.dataKey === "Cumulative") color = "var(--t-accent)";
+          else if (entry.dataKey === "EndingBalance") color = "var(--t-gold)";
+          else if (entry.dataKey === "NetDelta") color = entry.value >= 0 ? "var(--t-sage)" : "var(--t-rust)";
+
           return (
             <div
               key={index}
@@ -190,10 +206,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 12,
+                gap: 16,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <span
                   style={{
                     width: 8,
@@ -201,9 +217,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                     borderRadius: "50%",
                     background: color,
                     display: "inline-block",
+                    boxShadow: `0 0 6px ${color}`,
                   }}
                 />
-                <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--t-ink)" }}>
+                <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--t-ink)" }}>
                   {entry.name}
                 </span>
               </div>
@@ -211,7 +228,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                 style={{
                   fontSize: "13px",
                   fontWeight: 700,
-                  color: entry.dataKey === "Cumulative" ? "var(--t-accent)" : "var(--t-ink)",
+                  color:
+                    entry.dataKey === "Inflow"
+                      ? "var(--t-sage)"
+                      : entry.dataKey === "Outflow"
+                        ? "var(--t-rust)"
+                        : "var(--t-ink)",
+                  fontVariantNumeric: "tabular-nums",
                 }}
               >
                 <Money value={entry.value} variant="full" />
@@ -224,6 +247,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+// ── Salary Sourcing Modal ──────────────────────────────────────────────────
 function SalarySourcingModal({
   isOpen,
   onClose,
@@ -268,7 +292,7 @@ function SalarySourcingModal({
     <Modal
       title="Salary Forecast Sourcing"
       onClose={onClose}
-      maxWidth={620}
+      maxWidth={640}
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
           <Button variant="secondary" size="sm" onClick={handleResetAuto}>
@@ -286,56 +310,58 @@ function SalarySourcingModal({
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Accounting rule banner */}
+        {/* Accounting Rule Banner */}
         <div
           style={{
             background: `color-mix(in srgb, ${THEME.accent} 8%, transparent)`,
             border: `1px solid color-mix(in srgb, ${THEME.accent} 20%, transparent)`,
-            borderRadius: 10,
-            padding: "12px 14px",
-            fontSize: 12,
+            borderRadius: 12,
+            padding: "14px 16px",
+            fontSize: 12.5,
             lineHeight: 1.5,
             color: THEME.ink,
             display: "flex",
-            gap: 10,
+            gap: 12,
           }}
         >
-          <Info size={18} style={{ color: THEME.accent, flexShrink: 0, marginTop: 1 }} />
+          <Info size={19} style={{ color: THEME.accent, flexShrink: 0, marginTop: 1 }} />
           <div>
-            <strong>Senior Accountant Note:</strong> The cash flow forecast projects your recurring <em>net take-home salary</em> (in-hand pay after statutory deductions).
-            By default, we evaluate <strong>Bank statement salary credits first</strong>, then <strong>official Salary Slips</strong>, and finally the <strong>Income Ledger</strong>. You can review detected amounts or pick any source below.
+            <strong>Senior Accountant Note:</strong> The cash flow forecast projects recurring <em>net take-home pay</em> (in-hand post statutory deductions).
+            By default, we evaluate <strong>Bank statement credits (Priority 1)</strong> first, then <strong>official Salary Slips (Priority 2)</strong>, and finally the <strong>Income Ledger (Priority 3)</strong>.
           </div>
         </div>
 
         {/* Current Active Source Indicator */}
         <div
           style={{
-            background: "var(--surface-0)",
-            border: `1px solid ${THEME.line}`,
-            borderRadius: 10,
-            padding: "12px 16px",
+            background: "var(--surface-1)",
+            border: `1.5px solid ${THEME.line}`,
+            borderRadius: 12,
+            padding: "14px 18px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
           }}
         >
           <div>
-            <span style={{ fontSize: 11, color: THEME.muted, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-              Active Forecast Value
+            <span style={{ fontSize: 11, color: THEME.muted, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.06em" }}>
+              Active Forecast Net Salary
             </span>
-            <div style={{ fontSize: 18, fontWeight: 800, color: THEME.sage, marginTop: 2 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: THEME.sage, marginTop: 3 }}>
               ₹{Math.round(effectiveSalaryInfo.amount).toLocaleString("en-IN")}{" "}
-              <span style={{ fontSize: 12, fontWeight: 500, color: THEME.muted }}>/ month</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: THEME.muted }}>/ month</span>
             </div>
-            <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+            <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 3 }}>
               Source: <strong>{effectiveSalaryInfo.label}</strong>
               {effectiveSalaryInfo.isOverridden && (
-                <span style={{ marginLeft: 6, color: THEME.gold, fontWeight: 600 }}>• User Override</span>
+                <span style={{ marginLeft: 6, color: THEME.gold, fontWeight: 700 }}>• User Override</span>
               )}
             </div>
           </div>
-          {effectiveSalaryInfo.isOverridden && (
-            <Badge variant="gold">Custom Config</Badge>
+          {effectiveSalaryInfo.isOverridden ? (
+            <Badge variant="gold">Custom Override</Badge>
+          ) : (
+            <Badge variant="sage">Auto-Linked</Badge>
           )}
         </div>
 
@@ -344,15 +370,15 @@ function SalarySourcingModal({
           onClick={() => setSource("auto")}
           style={{
             border: `1.5px solid ${source === "auto" ? THEME.accent : THEME.line}`,
-            background: source === "auto" ? `color-mix(in srgb, ${THEME.accent} 5%, transparent)` : "var(--surface-0)",
-            borderRadius: 10,
+            background: source === "auto" ? `color-mix(in srgb, ${THEME.accent} 6%, var(--surface-0))` : "var(--surface-0)",
+            borderRadius: 12,
             padding: "14px 16px",
             cursor: "pointer",
             transition: "all 0.15s ease",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <input
                 type="radio"
                 name="salarySource"
@@ -361,15 +387,15 @@ function SalarySourcingModal({
                 style={{ cursor: "pointer", accentColor: THEME.accent }}
               />
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
-                  Auto-Detect (Bank First, then Salary Slips)
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: THEME.ink }}>
+                  Auto-Detect (Bank First → Salary Slips → Ledger)
                 </div>
-                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2 }}>
                   Evaluates recent bank credit transactions first; falls back to verified salary slips.
                 </div>
               </div>
             </div>
-            <Badge variant="muted">Default</Badge>
+            <Badge variant="muted">Default Priority</Badge>
           </div>
         </div>
 
@@ -378,15 +404,15 @@ function SalarySourcingModal({
           onClick={() => setSource("bank")}
           style={{
             border: `1.5px solid ${source === "bank" ? THEME.accent : THEME.line}`,
-            background: source === "bank" ? `color-mix(in srgb, ${THEME.accent} 5%, transparent)` : "var(--surface-0)",
-            borderRadius: 10,
+            background: source === "bank" ? `color-mix(in srgb, ${THEME.accent} 6%, var(--surface-0))` : "var(--surface-0)",
+            borderRadius: 12,
             padding: "14px 16px",
             cursor: "pointer",
             transition: "all 0.15s ease",
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
               <input
                 type="radio"
                 name="salarySource"
@@ -395,10 +421,10 @@ function SalarySourcingModal({
                 style={{ cursor: "pointer", accentColor: THEME.accent, marginTop: 3 }}
               />
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: THEME.ink }}>
                   Bank Statement Credits (Priority 1)
                 </div>
-                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2 }}>
                   {bank.txns.length > 0
                     ? `${bank.txns.length} credit transaction(s) categorized as Salary`
                     : "No salary credits detected in bank accounts"}
@@ -409,11 +435,11 @@ function SalarySourcingModal({
                       <div
                         key={i}
                         style={{
-                          fontSize: 10.5,
+                          fontSize: 11,
                           color: THEME.ink,
                           background: "var(--surface-1)",
-                          padding: "4px 8px",
-                          borderRadius: 4,
+                          padding: "5px 10px",
+                          borderRadius: 6,
                           display: "flex",
                           justifyContent: "space-between",
                           fontVariantNumeric: "tabular-nums",
@@ -423,24 +449,21 @@ function SalarySourcingModal({
                         <strong>₹{Number(t.amount || 0).toLocaleString("en-IN")}</strong>
                       </div>
                     ))}
-                    {bank.txns.length > 3 && (
-                      <span style={{ fontSize: 10, color: THEME.muted }}>+ {bank.txns.length - 3} more transactions</span>
-                    )}
                   </div>
                 )}
                 {bank.monthly > 0 && slip.monthly > 0 && bank.monthly < slip.monthly * 0.5 && (
-                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, color: THEME.gold || "#f59e0b", fontSize: 11 }}>
-                    <AlertCircle size={13} />
-                    <span>Bank credit (₹{Math.round(bank.monthly).toLocaleString("en-IN")}) is substantially lower than Salary Slips (₹{Math.round(slip.monthly).toLocaleString("en-IN")}). May be an allowance or partial payment.</span>
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, color: THEME.gold || "#f59e0b", fontSize: 11.5 }}>
+                    <AlertCircle size={14} />
+                    <span>Bank credit (₹{Math.round(bank.monthly).toLocaleString("en-IN")}) is lower than Salary Slip net (₹{Math.round(slip.monthly).toLocaleString("en-IN")}).</span>
                   </div>
                 )}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: bank.monthly > 0 ? THEME.sage : THEME.muted }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: bank.monthly > 0 ? THEME.sage : THEME.muted }}>
                 ₹{Math.round(bank.monthly).toLocaleString("en-IN")}
               </div>
-              <span style={{ fontSize: 10, color: THEME.muted }}>/mo avg</span>
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>/mo avg</span>
             </div>
           </div>
         </div>
@@ -450,15 +473,15 @@ function SalarySourcingModal({
           onClick={() => setSource("slip")}
           style={{
             border: `1.5px solid ${source === "slip" ? THEME.accent : THEME.line}`,
-            background: source === "slip" ? `color-mix(in srgb, ${THEME.accent} 5%, transparent)` : "var(--surface-0)",
-            borderRadius: 10,
+            background: source === "slip" ? `color-mix(in srgb, ${THEME.accent} 6%, var(--surface-0))` : "var(--surface-0)",
+            borderRadius: 12,
             padding: "14px 16px",
             cursor: "pointer",
             transition: "all 0.15s ease",
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
               <input
                 type="radio"
                 name="salarySource"
@@ -468,12 +491,12 @@ function SalarySourcingModal({
               />
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: THEME.ink }}>
                     Official Salary Slips (Priority 2)
                   </span>
-                  <Badge variant="sage">Audited Net Pay</Badge>
+                  <Badge variant="sage">Audited In-Hand Pay</Badge>
                 </div>
-                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2 }}>
                   {slip.slips.length > 0
                     ? `Latest net take-home pay from Salary Slip Tracker`
                     : "No salary slips uploaded yet in Salary Tracker"}
@@ -484,11 +507,11 @@ function SalarySourcingModal({
                       <div
                         key={i}
                         style={{
-                          fontSize: 11,
+                          fontSize: 11.5,
                           color: THEME.ink,
                           background: "var(--surface-1)",
-                          padding: "6px 10px",
-                          borderRadius: 6,
+                          padding: "6px 12px",
+                          borderRadius: 8,
                           border: `1px solid ${THEME.line}`,
                         }}
                       >
@@ -496,8 +519,8 @@ function SalarySourcingModal({
                           <span>{s.employer || "Employer"} ({s.slipMonth || "Month N/A"})</span>
                           <span style={{ color: THEME.sage }}>Net: ₹{Number(s.netSalary || 0).toLocaleString("en-IN")}</span>
                         </div>
-                        <div style={{ fontSize: 10, color: THEME.muted, marginTop: 2 }}>
-                          Gross: ₹{Number(s.grossSalary || 0).toLocaleString("en-IN")} • Deductions (PF/TDS): ₹{Number(s.totalDeductions || 0).toLocaleString("en-IN")}
+                        <div style={{ fontSize: 10.5, color: THEME.muted, marginTop: 2 }}>
+                          Gross: ₹{Number(s.grossSalary || 0).toLocaleString("en-IN")} • Deductions: ₹{Number(s.totalDeductions || 0).toLocaleString("en-IN")}
                         </div>
                       </div>
                     ))}
@@ -516,7 +539,7 @@ function SalarySourcingModal({
                         background: "none",
                         border: "none",
                         color: THEME.accent,
-                        fontSize: 11,
+                        fontSize: 11.5,
                         fontWeight: 600,
                         cursor: "pointer",
                         display: "inline-flex",
@@ -525,18 +548,18 @@ function SalarySourcingModal({
                         padding: 0,
                       }}
                     >
-                      <FileText size={12} />
-                      <span>Manage slips in Salary Slip Tracker →</span>
+                      <FileText size={13} />
+                      <span>Manage slips in Salary Tracker →</span>
                     </button>
                   </div>
                 )}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: slip.monthly > 0 ? THEME.sage : THEME.muted }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: slip.monthly > 0 ? THEME.sage : THEME.muted }}>
                 ₹{Math.round(slip.monthly).toLocaleString("en-IN")}
               </div>
-              <span style={{ fontSize: 10, color: THEME.muted }}>/mo net</span>
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>/mo net</span>
             </div>
           </div>
         </div>
@@ -546,15 +569,15 @@ function SalarySourcingModal({
           onClick={() => setSource("ledger")}
           style={{
             border: `1.5px solid ${source === "ledger" ? THEME.accent : THEME.line}`,
-            background: source === "ledger" ? `color-mix(in srgb, ${THEME.accent} 5%, transparent)` : "var(--surface-0)",
-            borderRadius: 10,
+            background: source === "ledger" ? `color-mix(in srgb, ${THEME.accent} 6%, var(--surface-0))` : "var(--surface-0)",
+            borderRadius: 12,
             padding: "14px 16px",
             cursor: "pointer",
             transition: "all 0.15s ease",
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
               <input
                 type="radio"
                 name="salarySource"
@@ -563,10 +586,10 @@ function SalarySourcingModal({
                 style={{ cursor: "pointer", accentColor: THEME.accent, marginTop: 3 }}
               />
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: THEME.ink }}>
                   Income Ledger Entries (Priority 3)
                 </div>
-                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2 }}>
                   {ledger.entries.length > 0
                     ? `${ledger.entries.length} manual entry(ies) in income ledger`
                     : "No manual salary entries logged in income ledger"}
@@ -574,10 +597,10 @@ function SalarySourcingModal({
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: ledger.monthly > 0 ? THEME.sage : THEME.muted }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: ledger.monthly > 0 ? THEME.sage : THEME.muted }}>
                 ₹{Math.round(ledger.monthly).toLocaleString("en-IN")}
               </div>
-              <span style={{ fontSize: 10, color: THEME.muted }}>/mo avg</span>
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>/mo avg</span>
             </div>
           </div>
         </div>
@@ -587,14 +610,14 @@ function SalarySourcingModal({
           onClick={() => setSource("custom")}
           style={{
             border: `1.5px solid ${source === "custom" ? THEME.accent : THEME.line}`,
-            background: source === "custom" ? `color-mix(in srgb, ${THEME.accent} 5%, transparent)` : "var(--surface-0)",
-            borderRadius: 10,
+            background: source === "custom" ? `color-mix(in srgb, ${THEME.accent} 6%, var(--surface-0))` : "var(--surface-0)",
+            borderRadius: 12,
             padding: "14px 16px",
             cursor: "pointer",
             transition: "all 0.15s ease",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <input
               type="radio"
               name="salarySource"
@@ -603,15 +626,15 @@ function SalarySourcingModal({
               style={{ cursor: "pointer", accentColor: THEME.accent }}
             />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
-                Custom Monthly Take-Home Pay
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: THEME.ink }}>
+                Custom Monthly Take-Home Pay Override
               </div>
-              <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+              <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2 }}>
                 Enter your exact expected recurring monthly net salary for this forecast.
               </div>
               {source === "custom" && (
                 <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: THEME.ink }}>₹</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: THEME.ink }}>₹</span>
                   <input
                     type="number"
                     value={customVal}
@@ -619,13 +642,13 @@ function SalarySourcingModal({
                     placeholder="e.g. 161210"
                     style={{
                       padding: "8px 12px",
-                      borderRadius: 6,
-                      border: `1px solid ${THEME.line}`,
+                      borderRadius: 8,
+                      border: `1.5px solid ${THEME.line}`,
                       background: "var(--surface-0)",
                       color: THEME.ink,
                       fontSize: 14,
                       fontWeight: 700,
-                      width: 180,
+                      width: 190,
                     }}
                     autoFocus
                   />
@@ -640,6 +663,8 @@ function SalarySourcingModal({
   );
 }
 
+// ── MAIN CASH FLOW TAB COMPONENT ───────────────────────────────────────────
+
 export const CashFlowTab = ({
   state,
   metrics,
@@ -650,9 +675,23 @@ export const CashFlowTab = ({
   onNavigateToTab?: (tab: string) => void;
 }) => {
   const { privacyMode } = usePrivacy();
-  const isDark = state.settings?.darkMode ?? false;
-  const [forecastMonths, setForecastMonths] = useState<3 | 6>(6);
+  const isDark = state?.settings?.darkMode ?? false;
+
+  // Horizon: 1, 3, 6, 12 Months
+  const [forecastMonths, setForecastMonths] = useState<HorizonMonths>(6);
+
+  // Visualization Mode: "flow" (In/Out Bars + Line), "balance" (Bank balance Area), "delta" (Net bars)
+  const [chartViewMode, setChartViewMode] = useState<"flow" | "balance" | "delta">("flow");
+
+  // Filter for inflows & outflows
+  const [inflowFilter, setInflowFilter] = useState<string>("all");
+  const [outflowFilter, setOutflowFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Section collapse states
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    simulator: false,
+    matrix: true,
     inflows: true,
     outflows: true,
     events: true,
@@ -660,9 +699,45 @@ export const CashFlowTab = ({
   const toggleSection = (key: string) =>
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // Selected Month for Drill-down Inspector modal
+  const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
+
+  // ── WHAT-IF SIMULATOR STATE ──────────────────────────────────────────────
+  const [simSalaryHikePct, setSimSalaryHikePct] = useState<number>(0);
+  const [simBonusAmount, setSimBonusAmount] = useState<number>(0);
+  const [simBonusMonth, setSimBonusMonth] = useState<string>("");
+  const [simExpenseAmount, setSimExpenseAmount] = useState<number>(0);
+  const [simExpenseMonth, setSimExpenseMonth] = useState<string>("");
+  const [simSipDelta, setSimSipDelta] = useState<number>(0);
+
+  const isSimulationActive =
+    simSalaryHikePct !== 0 ||
+    simBonusAmount > 0 ||
+    simExpenseAmount > 0 ||
+    simSipDelta !== 0;
+
+  const resetSimulation = () => {
+    setSimSalaryHikePct(0);
+    setSimBonusAmount(0);
+    setSimBonusMonth("");
+    setSimExpenseAmount(0);
+    setSimExpenseMonth("");
+    setSimSipDelta(0);
+  };
+
   const months = useMemo(() => getFutureMonths(forecastMonths), [forecastMonths]);
 
-  // User salary sourcing preference: "auto" | "bank" | "slip" | "ledger" | "custom"
+  // Set default simulation months when months change
+  React.useEffect(() => {
+    if (months.length > 0 && !simBonusMonth) {
+      setSimBonusMonth(months[0].key);
+    }
+    if (months.length > 0 && !simExpenseMonth) {
+      setSimExpenseMonth(months[0].key);
+    }
+  }, [months, simBonusMonth, simExpenseMonth]);
+
+  // ── SALARY SOURCING PREFERENCE ───────────────────────────────────────────
   const [salaryPref, setSalaryPref] = useState<{
     source: "auto" | "bank" | "slip" | "ledger" | "custom";
     customAmount?: number;
@@ -685,18 +760,25 @@ export const CashFlowTab = ({
     } catch {}
   };
 
+  // ── STARTING LIQUID CASH (from Bank Accounts) ────────────────────────────
+  const startingLiquidCash = useMemo(() => {
+    return (state?.bankAccounts || []).reduce(
+      (sum: number, b: any) => sum + Number(b.balance || 0),
+      0
+    );
+  }, [state?.bankAccounts]);
+
   // ── SALARY CANDIDATE EVALUATION ───────────────────────────────────────────
   // Evaluates all available candidates:
   // 1. Bank transactions (Priority 1: checked first)
   // 2. Official Salary Slips (Priority 2: verified net pay)
   // 3. Income Ledger (Priority 3: manual entries)
   const salaryCandidates = useMemo(() => {
-    // 1. Bank Credit Transactions (Priority 1 per accounting rule)
-    const employerNames = (state.salarySlips || [])
+    const employerNames = (state?.salarySlips || [])
       .map((s: any) => (s.employer || "").toLowerCase().trim())
       .filter((e: string) => e.length > 2);
 
-    const salaryTxns = (state.transactions || []).filter((t: any) => {
+    const salaryTxns = (state?.transactions || []).filter((t: any) => {
       if (t.type !== "credit") return false;
       const cat = (t.category || "").toLowerCase();
       const desc = (t.description || "").toLowerCase();
@@ -722,7 +804,7 @@ export const CashFlowTab = ({
 
     // 2. Official Salary Slips from Salary Tracker (Priority 2)
     const ownerLatestSlip = new Map<string, any>();
-    (state.salarySlips || []).forEach((sl: any) => {
+    (state?.salarySlips || []).forEach((sl: any) => {
       const ownerKey = sl.owner || "self";
       const current = ownerLatestSlip.get(ownerKey);
       if (!current || (sl.slipMonth || "").localeCompare(current.slipMonth || "") > 0) {
@@ -733,7 +815,7 @@ export const CashFlowTab = ({
     const slipMonthly = slipDetails.reduce((sum, sl) => sum + Number(sl.netSalary || 0), 0);
 
     // 3. Manual Income Ledger Entries (Priority 3)
-    const salaryEntries = (state.income || []).filter(
+    const salaryEntries = (state?.income || []).filter(
       (i: any) =>
         (i.source || i.category || "").toLowerCase().includes("salary") ||
         (i.note || "").toLowerCase().includes("salary")
@@ -769,7 +851,7 @@ export const CashFlowTab = ({
         recentMonths: sortedLedgerYMs.slice(-3),
       },
     };
-  }, [state.transactions, state.salarySlips, state.income]);
+  }, [state?.transactions, state?.salarySlips, state?.income]);
 
   // Determine active effective salary based on priority:
   // Priority 1: Bank Transactions -> Priority 2: Salary Slips -> Priority 3: Income Ledger
@@ -799,7 +881,7 @@ export const CashFlowTab = ({
       activeAmount = ledger.monthly;
       label = "From Income Ledger";
     } else {
-      // "auto": Rule: first check from bank, then from salary slip, then income ledger
+      // "auto": Rule: check bank first, then salary slip, then income ledger
       if (bank.monthly > 0) {
         activeSource = "bank";
         activeAmount = bank.monthly;
@@ -824,9 +906,8 @@ export const CashFlowTab = ({
     };
   }, [salaryCandidates, salaryPref]);
 
-  // ── INCOME SOURCES ─────────────────────────────────────────────────────────
-
-  const inflows = useMemo(() => {
+  // ── INCOME SOURCES (INFLOWS) ─────────────────────────────────────────────
+  const rawInflows = useMemo(() => {
     const sources: {
       name: string;
       monthly: number;
@@ -837,21 +918,24 @@ export const CashFlowTab = ({
       isOverridden?: boolean;
     }[] = [];
 
-    // 1. Primary / Salary Income:
-    if (effectiveSalaryInfo.amount > 0) {
+    // 1. Primary / Salary Income (with simulation adjustment if active)
+    const baseSalary = effectiveSalaryInfo.amount;
+    const simulatedSalary = baseSalary * (1 + (simSalaryHikePct || 0) / 100);
+
+    if (simulatedSalary > 0) {
       sources.push({
         name: "Salary",
-        monthly: effectiveSalaryInfo.amount,
+        monthly: simulatedSalary,
         icon: Wallet,
         category: "Salary",
         sourceLabel: effectiveSalaryInfo.label,
         sourceType: effectiveSalaryInfo.source,
-        isOverridden: effectiveSalaryInfo.isOverridden,
+        isOverridden: effectiveSalaryInfo.isOverridden || simSalaryHikePct !== 0,
       });
     }
 
     // 2. Rental Income (Active Landlord Properties)
-    const rentalTotal = (state.rentalProperties || []).reduce(
+    const rentalTotal = (state?.rentalProperties || []).reduce(
       (sum: number, p: any) => sum + getEffectiveRent(p),
       0
     );
@@ -859,7 +943,7 @@ export const CashFlowTab = ({
       sources.push({ name: "Rental Income", monthly: rentalTotal, icon: Home, category: "Rental" });
 
     // 3. Dividend Income
-    const dividends = state.dividends || [];
+    const dividends = state?.dividends || [];
     if (dividends.length > 0) {
       const amounts = dividends.map((d: any) => Number(d.amount || d.totalAmount || 0));
       const totalDiv = amounts.reduce((s: number, a: number) => s + a, 0);
@@ -889,7 +973,7 @@ export const CashFlowTab = ({
     }
 
     // 4. Interest Income — FDs
-    const fdInterest = (state.fixedDeposits || []).reduce((sum: number, fd: any) => {
+    const fdInterest = (state?.fixedDeposits || []).reduce((sum: number, fd: any) => {
       const principal = Number(fd.principal || fd.amount || 0);
       const rate = Number(fd.rate || fd.interestRate || 0);
       return sum + (principal * rate) / 100 / 12;
@@ -903,7 +987,7 @@ export const CashFlowTab = ({
       });
 
     // Interest Income — RDs
-    const rdInterest = (state.recurringDeposits || []).reduce((sum: number, rd: any) => {
+    const rdInterest = (state?.recurringDeposits || []).reduce((sum: number, rd: any) => {
       const monthly = Number(rd.monthly || 0);
       const rate = Number(rd.rate || rd.interestRate || 0);
       const tenure = Number(rd.tenureMonths || 12);
@@ -919,7 +1003,7 @@ export const CashFlowTab = ({
       });
 
     // Interest Income — PPF
-    const ppfInterest = (state.ppf || []).reduce((sum: number, p: any) => {
+    const ppfInterest = (state?.ppf || []).reduce((sum: number, p: any) => {
       const balance = Number(p.currentBalance || p.balance || 0);
       const rate = Number(p.interestRate || 7.1);
       return sum + (balance * rate) / 100 / 12;
@@ -933,7 +1017,7 @@ export const CashFlowTab = ({
       });
 
     // 5. Other Income from Bank & Income Ledger (Freelance, Consulting, Business, etc.)
-    const nonSalaryIncome = (state.income || []).filter(
+    const nonSalaryIncome = (state?.income || []).filter(
       (i: any) => !(i.source || i.category || "").toLowerCase().includes("salary")
     );
     if (nonSalaryIncome.length > 0) {
@@ -961,43 +1045,57 @@ export const CashFlowTab = ({
 
     return sources;
   }, [
-    state.salarySlips,
-    state.income,
-    state.transactions,
-    state.rentalProperties,
-    state.dividends,
-    state.fixedDeposits,
-    state.recurringDeposits,
-    state.ppf,
+    effectiveSalaryInfo,
+    simSalaryHikePct,
+    state?.rentalProperties,
+    state?.dividends,
+    state?.fixedDeposits,
+    state?.recurringDeposits,
+    state?.ppf,
+    state?.income,
   ]);
 
-  // ── EXPENSE SOURCES ────────────────────────────────────────────────────────
+  const inflows = useMemo(() => {
+    return rawInflows.filter((item) => {
+      if (inflowFilter !== "all" && item.category.toLowerCase() !== inflowFilter.toLowerCase()) {
+        return false;
+      }
+      if (searchTerm && !item.name.toLowerCase().includes(searchTerm.toLowerCase()) && !item.category.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+  }, [rawInflows, inflowFilter, searchTerm]);
 
-  const outflows = useMemo(() => {
-    const sources: { name: string; monthly: number; icon: any; category: string }[] = [];
+  // ── EXPENSE SOURCES (OUTFLOWS) ───────────────────────────────────────────
+  const rawOutflows = useMemo(() => {
+    const sources: { name: string; monthly: number; icon: any; category: string; isSimulated?: boolean }[] = [];
 
     // 1. EMIs (active loans only)
-    const emiTotal = (state.loansTaken || [])
+    const emiTotal = (state?.loansTaken || [])
       .filter((l: any) => loanOutstanding(l) > 0 && Number(l.monthsRemaining ?? 1) > 0)
       .reduce((sum: number, l: any) => sum + Number(l.emi || 0), 0);
     if (emiTotal > 0)
       sources.push({ name: "Loan EMIs", monthly: emiTotal, icon: CreditCard, category: "EMI" });
 
-    // 2. SIPs (active only)
-    const sipTotal = (state.sips || []).reduce((sum: number, s: any) => {
+    // 2. SIPs (active only, with simulation adjustment)
+    const baseSipTotal = (state?.sips || []).reduce((sum: number, s: any) => {
       if ((s.status || "").toLowerCase() === "stopped") return sum;
       return sum + Number(s.amount || 0);
     }, 0);
-    if (sipTotal > 0)
+    const effectiveSipTotal = Math.max(0, baseSipTotal + (simSipDelta || 0));
+
+    if (effectiveSipTotal > 0)
       sources.push({
         name: "SIP Investments",
-        monthly: sipTotal,
+        monthly: effectiveSipTotal,
         icon: TrendingUp,
         category: "SIP",
+        isSimulated: simSipDelta !== 0,
       });
 
     // 3. Subscriptions
-    const subTotal = (state.subscriptions || []).reduce((sum: number, s: any) => {
+    const subTotal = (state?.subscriptions || []).reduce((sum: number, s: any) => {
       if (
         s.paused ||
         (s.status || "").toLowerCase() === "cancelled" ||
@@ -1016,7 +1114,7 @@ export const CashFlowTab = ({
       });
 
     // 4. Recurring Expenses
-    const recurringTotal = (state.recurringExpenses || []).reduce(
+    const recurringTotal = (state?.recurringExpenses || []).reduce(
       (sum: number, e: any) => sum + Number(e.amount || 0),
       0
     );
@@ -1029,7 +1127,7 @@ export const CashFlowTab = ({
       });
 
     // 5. Credit Card Minimum Dues
-    const ccMinDue = (state.creditCards || [])
+    const ccMinDue = (state?.creditCards || [])
       .filter((c: any) => (c.status || "").toLowerCase() !== "closed")
       .reduce((sum: number, c: any) => sum + Number(c.minimumDue || c.lastBill || 0), 0);
     if (ccMinDue > 0)
@@ -1041,7 +1139,7 @@ export const CashFlowTab = ({
       });
 
     // 6. Rent Paid
-    const rentPaid = (state.rentedProperties || []).reduce(
+    const rentPaid = (state?.rentedProperties || []).reduce(
       (sum: number, p: any) => sum + getEffectiveRent(p),
       0
     );
@@ -1049,22 +1147,22 @@ export const CashFlowTab = ({
       sources.push({ name: "Rent Paid", monthly: rentPaid, icon: Home, category: "Rent" });
 
     // 7. Insurance Premiums (LIC, Term, Investment, Health)
-    const licPremium = (state.lic || []).reduce(
+    const licPremium = (state?.lic || []).reduce(
       (sum: number, l: any) =>
         sum + annualizePremium(l.premium, l.premiumFrequency, l.annualPremium) / 12,
       0
     );
-    const termPremium = (state.termPlans || []).reduce(
+    const termPremium = (state?.termPlans || []).reduce(
       (sum: number, t: any) =>
         sum + annualizePremium(t.premium, t.premiumFrequency, t.annualPremium) / 12,
       0
     );
-    const ulipPremium = (state.investmentPlans || []).reduce(
+    const ulipPremium = (state?.investmentPlans || []).reduce(
       (sum: number, ip: any) =>
         sum + annualizePremium(ip.premium, ip.premiumFrequency, ip.annualPremium) / 12,
       0
     );
-    const healthPremium = (state.healthInsurance || []).reduce(
+    const healthPremium = (state?.healthInsurance || []).reduce(
       (sum: number, h: any) => {
         const mult: Record<string, number> = { monthly: 12, quarterly: 4, semi_annual: 2, annual: 1 };
         const annualAmt = Number(h.premium || 0) * (mult[h.premiumFrequency || "annual"] || 1);
@@ -1081,7 +1179,7 @@ export const CashFlowTab = ({
         category: "Insurance",
       });
 
-    // 8. Living / Day-to-Day Expenses from Budget or Bank Debit Transactions Ledger:
+    // 8. Living / Day-to-Day Expenses
     const DEDICATED_CATEGORIES = new Set([
       "emi",
       "loan",
@@ -1100,7 +1198,7 @@ export const CashFlowTab = ({
       return DEDICATED_CATEGORIES.has(c);
     };
 
-    const budgetTotal = (state.budgets || [])
+    const budgetTotal = (state?.budgets || [])
       .filter((b: any) => !isDedicatedCategory(b.category))
       .reduce((sum: number, b: any) => sum + Number(b.monthly || b.monthlyLimit || b.limit || 0), 0);
 
@@ -1112,8 +1210,7 @@ export const CashFlowTab = ({
         category: "Budget",
       });
     } else {
-      // If user hasn't set manual budget targets, compute actual average monthly discretionary living expense from debit transactions
-      const livingTxns = (state.transactions || []).filter(
+      const livingTxns = (state?.transactions || []).filter(
         (t: any) => t.type === "debit" && !isDedicatedCategory(t.category)
       );
       if (livingTxns.length > 0) {
@@ -1143,22 +1240,34 @@ export const CashFlowTab = ({
 
     return sources;
   }, [
-    state.loansTaken,
-    state.sips,
-    state.subscriptions,
-    state.recurringExpenses,
-    state.creditCards,
-    state.rentedProperties,
-    state.lic,
-    state.termPlans,
-    state.investmentPlans,
-    state.healthInsurance,
-    state.budgets,
-    state.transactions,
+    state?.loansTaken,
+    state?.sips,
+    simSipDelta,
+    state?.subscriptions,
+    state?.recurringExpenses,
+    state?.creditCards,
+    state?.rentedProperties,
+    state?.lic,
+    state?.termPlans,
+    state?.investmentPlans,
+    state?.healthInsurance,
+    state?.budgets,
+    state?.transactions,
   ]);
 
-  // ── ONE-TIME EVENTS ────────────────────────────────────────────────────────
+  const outflows = useMemo(() => {
+    return rawOutflows.filter((item) => {
+      if (outflowFilter !== "all" && item.category.toLowerCase() !== outflowFilter.toLowerCase()) {
+        return false;
+      }
+      if (searchTerm && !item.name.toLowerCase().includes(searchTerm.toLowerCase()) && !item.category.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+  }, [rawOutflows, outflowFilter, searchTerm]);
 
+  // ── ONE-TIME EVENTS ───────────────────────────────────────────────────────
   const events = useMemo(() => {
     const items: {
       date: string;
@@ -1166,10 +1275,11 @@ export const CashFlowTab = ({
       amount: number;
       category: string;
       type: "inflow" | "outflow";
+      isSimulated?: boolean;
     }[] = [];
 
     // FD Maturities
-    (state.fixedDeposits || []).forEach((fd: any) => {
+    (state?.fixedDeposits || []).forEach((fd: any) => {
       const matDate = fd.maturityDate || "";
       if (isDateInRange(matDate, months)) {
         const principal = Number(fd.principal || 0);
@@ -1189,7 +1299,7 @@ export const CashFlowTab = ({
     });
 
     // RD Maturities
-    (state.recurringDeposits || []).forEach((rd: any) => {
+    (state?.recurringDeposits || []).forEach((rd: any) => {
       if (!rd.startDate || !rd.monthly || !rd.tenureMonths) return;
       const matDate = addMonthsToDateStr(rd.startDate, Number(rd.tenureMonths));
       if (isDateInRange(matDate, months)) {
@@ -1208,8 +1318,8 @@ export const CashFlowTab = ({
       }
     });
 
-    // Bond Maturities (inflow)
-    (state.bonds || []).forEach((b: any) => {
+    // Bond Maturities
+    (state?.bonds || []).forEach((b: any) => {
       const matDate = b.maturityDate || "";
       if (isDateInRange(matDate, months)) {
         const amount =
@@ -1227,8 +1337,8 @@ export const CashFlowTab = ({
       }
     });
 
-    // Loans Given Repayments (inflow)
-    (state.loansGiven || []).forEach((l: any) => {
+    // Loans Given Repayments
+    (state?.loansGiven || []).forEach((l: any) => {
       const outstanding = loanGivenOutstanding(l);
       if (outstanding <= 0 || !l.dueDate) return;
       if (isDateInRange(l.dueDate, months)) {
@@ -1242,7 +1352,7 @@ export const CashFlowTab = ({
       }
     });
 
-    // Insurance Premium Due (LIC, Term, Investment, Health)
+    // Insurance Premium Due
     const todayStr = today();
     const addPremiumDue = (policies: any[], startField: string, expiryField: string) => {
       (policies || []).forEach((policy: any) => {
@@ -1264,9 +1374,9 @@ export const CashFlowTab = ({
         }
       });
     };
-    addPremiumDue(state.lic, "commencementDate", "maturityDate");
-    addPremiumDue(state.termPlans, "startDate", "expiryDate");
-    addPremiumDue(state.investmentPlans, "commencementDate", "maturityDate");
+    addPremiumDue(state?.lic, "commencementDate", "maturityDate");
+    addPremiumDue(state?.termPlans, "startDate", "expiryDate");
+    addPremiumDue(state?.investmentPlans, "commencementDate", "maturityDate");
 
     const addHealthPremiumDue = (policies: any[]) => {
       (policies || []).forEach((policy: any) => {
@@ -1289,10 +1399,10 @@ export const CashFlowTab = ({
         }
       });
     };
-    addHealthPremiumDue(state.healthInsurance);
+    addHealthPremiumDue(state?.healthInsurance);
 
     // Loan Closures
-    (state.loansTaken || []).forEach((loan: any) => {
+    (state?.loansTaken || []).forEach((loan: any) => {
       if ((loan.status || "").toLowerCase() === "closed") return;
       if (!loan.monthsRemaining || !loan.emi) return;
       const outstanding = loanOutstanding(loan);
@@ -1309,8 +1419,8 @@ export const CashFlowTab = ({
       }
     });
 
-    // Subscription Renewals (yearly subs)
-    (state.subscriptions || []).forEach((sub: any) => {
+    // Subscriptions Renewal
+    (state?.subscriptions || []).forEach((sub: any) => {
       const freq = (sub.frequency || sub.billing || "monthly").toLowerCase();
       if (freq !== "yearly" && freq !== "annual" && freq !== "annually") return;
       if ((sub.status || "").toLowerCase() === "cancelled") return;
@@ -1326,45 +1436,76 @@ export const CashFlowTab = ({
       }
     });
 
+    // Simulated Bonus / Inflow
+    if (simBonusAmount > 0 && simBonusMonth) {
+      items.push({
+        date: `${simBonusMonth}-15`,
+        name: "Simulated Bonus / Lump Sum",
+        amount: simBonusAmount,
+        category: "Simulated Inflow",
+        type: "inflow",
+        isSimulated: true,
+      });
+    }
+
+    // Simulated Expense / Purchase
+    if (simExpenseAmount > 0 && simExpenseMonth) {
+      items.push({
+        date: `${simExpenseMonth}-15`,
+        name: "Simulated Major Expense / Purchase",
+        amount: simExpenseAmount,
+        category: "Simulated Outflow",
+        type: "outflow",
+        isSimulated: true,
+      });
+    }
+
     return items.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   }, [
-    state.fixedDeposits,
-    state.recurringDeposits,
-    state.bonds,
-    state.loansGiven,
-    state.lic,
-    state.termPlans,
-    state.investmentPlans,
-    state.healthInsurance,
-    state.loansTaken,
-    state.subscriptions,
+    state?.fixedDeposits,
+    state?.recurringDeposits,
+    state?.bonds,
+    state?.loansGiven,
+    state?.lic,
+    state?.termPlans,
+    state?.investmentPlans,
+    state?.healthInsurance,
+    state?.loansTaken,
+    state?.subscriptions,
     months,
+    simBonusAmount,
+    simBonusMonth,
+    simExpenseAmount,
+    simExpenseMonth,
   ]);
 
-  // ── CHART DATA ─────────────────────────────────────────────────────────────
-
-  const totalMonthlyInflow = inflows.reduce((s, i) => s + i.monthly, 0);
-  const totalMonthlyOutflow = outflows.reduce((s, o) => s + o.monthly, 0);
+  // ── TOTALS & SUMMARY CALCULATIONS ─────────────────────────────────────────
+  const totalMonthlyInflow = rawInflows.reduce((s, i) => s + i.monthly, 0);
+  const totalMonthlyOutflow = rawOutflows.reduce((s, o) => s + o.monthly, 0);
   const netMonthly = totalMonthlyInflow - totalMonthlyOutflow;
-  const totalInflow = totalMonthlyInflow * forecastMonths;
-  const totalOutflow = totalMonthlyOutflow * forecastMonths;
-  // Add one-time event amounts
+  const totalRegularInflow = totalMonthlyInflow * forecastMonths;
+  const totalRegularOutflow = totalMonthlyOutflow * forecastMonths;
+
   const eventInflow = events.filter((e) => e.type === "inflow").reduce((s, e) => s + e.amount, 0);
   const eventOutflow = events.filter((e) => e.type === "outflow").reduce((s, e) => s + e.amount, 0);
-  const grandInflow = totalInflow + eventInflow;
-  const grandOutflow = totalOutflow + eventOutflow;
+  const grandInflow = totalRegularInflow + eventInflow;
+  const grandOutflow = totalRegularOutflow + eventOutflow;
   const netCashFlow = grandInflow - grandOutflow;
+  const projectedEndingBalance = startingLiquidCash + netCashFlow;
 
-  // Count-up animation for the hero summary numbers below.
-  const animatedGrandInflow = useAnimatedNumber(grandInflow);
-  const animatedGrandOutflow = useAnimatedNumber(grandOutflow);
-  const animatedNetCashFlow = useAnimatedNumber(netCashFlow);
-  const animatedNetMonthly = useAnimatedNumber(netMonthly);
+  // Monthly Runway
+  const monthlyMandatoryOutflow = Math.max(1, totalMonthlyOutflow);
+  const liquidRunwayMonths = startingLiquidCash / monthlyMandatoryOutflow;
 
-  const chartData = useMemo(() => {
-    let cumulative = 0;
+  // Savings / Retention rate
+  const retentionRate = grandInflow > 0 ? ((grandInflow - grandOutflow) / grandInflow) * 100 : 0;
+
+  // ── MONTH-BY-MONTH MATRIX DATA ────────────────────────────────────────────
+  const monthMatrix = useMemo(() => {
+    let currentBalance = startingLiquidCash;
+    let cumulativeSurplus = 0;
+
     return months.map((m) => {
-      // Add one-time events for this month
       const monthEventInflow = events
         .filter((e) => e.type === "inflow" && e.date.startsWith(m.key))
         .reduce((s, e) => s + e.amount, 0);
@@ -1372,27 +1513,70 @@ export const CashFlowTab = ({
         .filter((e) => e.type === "outflow" && e.date.startsWith(m.key))
         .reduce((s, e) => s + e.amount, 0);
 
-      const inflow = totalMonthlyInflow + monthEventInflow;
-      const outflow = totalMonthlyOutflow + monthEventOutflow;
-      cumulative += inflow - outflow;
+      const mInflow = totalMonthlyInflow + monthEventInflow;
+      const mOutflow = totalMonthlyOutflow + monthEventOutflow;
+      const mNet = mInflow - mOutflow;
+
+      const startBal = currentBalance;
+      currentBalance += mNet;
+      cumulativeSurplus += mNet;
+
+      const monthEvents = events.filter((e) => e.date.startsWith(m.key));
 
       return {
-        month: m.label,
-        Inflow: Math.round(inflow),
-        Outflow: Math.round(outflow),
-        Cumulative: Math.round(cumulative),
+        key: m.key,
+        label: m.label,
+        year: m.year,
+        month: m.month,
+        regularInflow: totalMonthlyInflow,
+        eventInflow: monthEventInflow,
+        totalInflow: Math.round(mInflow),
+        regularOutflow: totalMonthlyOutflow,
+        eventOutflow: monthEventOutflow,
+        totalOutflow: Math.round(mOutflow),
+        netDelta: Math.round(mNet),
+        startingBalance: Math.round(startBal),
+        endingBalance: Math.round(currentBalance),
+        cumulativeSurplus: Math.round(cumulativeSurplus),
+        eventsCount: monthEvents.length,
+        events: monthEvents,
       };
     });
-  }, [months, totalMonthlyInflow, totalMonthlyOutflow, events]);
+  }, [months, events, totalMonthlyInflow, totalMonthlyOutflow, startingLiquidCash]);
 
-  // ── EMPTY STATE ────────────────────────────────────────────────────────────
+  // Chart data formatting
+  const chartData = useMemo(() => {
+    return monthMatrix.map((m) => ({
+      month: m.label,
+      Inflow: m.totalInflow,
+      Outflow: m.totalOutflow,
+      Cumulative: m.cumulativeSurplus,
+      EndingBalance: m.endingBalance,
+      NetDelta: m.netDelta,
+    }));
+  }, [monthMatrix]);
 
-  const hasData = inflows.length > 0 || outflows.length > 0;
+  // Animated Numbers for summary cards
+  const animatedStartingCash = useAnimatedNumber(startingLiquidCash);
+  const animatedGrandInflow = useAnimatedNumber(grandInflow);
+  const animatedGrandOutflow = useAnimatedNumber(grandOutflow);
+  const animatedNetCashFlow = useAnimatedNumber(netCashFlow);
+  const animatedEndingBalance = useAnimatedNumber(projectedEndingBalance);
+  const animatedNetMonthly = useAnimatedNumber(netMonthly);
+
+  // Selected Month Drilldown Data
+  const selectedMonthData = useMemo(() => {
+    if (!selectedMonthKey) return null;
+    return monthMatrix.find((m) => m.key === selectedMonthKey) || null;
+  }, [selectedMonthKey, monthMatrix]);
+
+  // ── EMPTY STATE ──────────────────────────────────────────────────────────
+  const hasData = rawInflows.length > 0 || rawOutflows.length > 0 || startingLiquidCash > 0;
 
   if (!hasData) {
     return (
       <div>
-        <SectionTitle sub="Forward-looking projection of your income, expenses, and one-time events">
+        <SectionTitle sub="Forward-looking projection of your income, expenses, liquid balance, and one-time events">
           Cash Flow Forecast
         </SectionTitle>
         <EmptyState
@@ -1407,609 +1591,955 @@ export const CashFlowTab = ({
     );
   }
 
-  // ── RENDER ─────────────────────────────────────────────────────────────────
-
+  // ── RENDER ───────────────────────────────────────────────────────────────
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <style>{`
+        .cf-segbtn {
+          color: var(--t-muted);
+          transition: all 0.2s var(--ease-premium);
+        }
+        .cf-segbtn:hover {
+          color: var(--t-ink);
+        }
+        .cf-segbtn.active {
+          color: var(--t-ink);
+          background: var(--surface-0) !important;
+          box-shadow: var(--shadow-sm);
+        }
+        .cf-matrix-card {
+          transition: all 0.22s var(--ease-premium);
+          cursor: pointer;
+        }
+        .cf-matrix-card:hover {
+          transform: translateY(-3px);
+          box-shadow: var(--shadow-md);
+          border-color: var(--t-accent) !important;
+        }
         .cf-list-row {
-          transition: background 0.2s var(--ease-premium), transform 0.2s var(--ease-premium);
+          transition: background 0.18s var(--ease-premium), transform 0.18s var(--ease-premium);
         }
         .cf-list-row:hover {
           background: var(--surface-1);
           transform: translateX(4px);
         }
-        .cf-event-row .cf-event-dot,
-        .cf-event-row .cf-event-content {
-          transition: transform 0.2s var(--ease-premium);
+        .cf-event-row .cf-event-dot {
+          transition: transform 0.2s var(--ease-premium), box-shadow 0.2s var(--ease-premium);
         }
         .cf-event-row:hover .cf-event-dot {
-          transform: scale(1.25);
-        }
-        .cf-event-row:hover .cf-event-content {
-          transform: translateX(6px);
-        }
-        .cf-segbtn {
-          color: var(--t-muted);
-        }
-        .cf-segbtn:hover,
-        .cf-segbtn.active {
-          color: var(--t-ink);
+          transform: scale(1.3);
+          box-shadow: 0 0 0 6px color-mix(in srgb, var(--t-accent) 25%, transparent) !important;
         }
       `}</style>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+
+      {/* ── Header with Horizon & Simulator Controls ───────────────────────── */}
       <SectionTitle
-        sub="Forward-looking projection of your income, expenses, and one-time events"
+        sub="Comprehensive forward-looking liquidity projection, recurring cash flows, and one-time capital events"
         rightElement={
-          <div
-            style={{
-              display: "flex",
-              background: "var(--surface-1)",
-              padding: "4px",
-              borderRadius: "var(--radius-md)",
-              border: `1.5px solid ${THEME.line}`,
-              position: "relative",
-              gap: "2px",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* What-If Simulator Toggle */}
             <button
-              onClick={() => setForecastMonths(3)}
-              aria-pressed={forecastMonths === 3}
-              className={`cf-segbtn ${forecastMonths === 3 ? "active" : ""}`}
+              onClick={() => toggleSection("simulator")}
               style={{
-                padding: "6px 14px",
-                borderRadius: "var(--radius-sm)",
-                border: "none",
-                background: forecastMonths === 3 ? "var(--surface-0)" : "transparent",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "7px 14px",
+                borderRadius: "var(--radius-md)",
+                border: `1.5px solid ${isSimulationActive ? THEME.accent : THEME.line}`,
+                background: isSimulationActive
+                  ? `color-mix(in srgb, ${THEME.accent} 12%, var(--surface-0))`
+                  : "var(--surface-0)",
+                color: isSimulationActive ? THEME.accent : THEME.ink,
+                fontSize: 12,
                 fontWeight: 700,
-                fontSize: "12px",
                 cursor: "pointer",
-                boxShadow: forecastMonths === 3 ? "var(--shadow-sm)" : "none",
-                transition: "all 0.2s var(--ease-premium)",
+                boxShadow: isSimulationActive ? `0 0 12px color-mix(in srgb, ${THEME.accent} 25%, transparent)` : "none",
+                transition: "all 0.2s ease",
               }}
             >
-              3 Months
+              <Sparkles size={14} style={{ color: isSimulationActive ? THEME.accent : THEME.muted }} />
+              <span>What-If Sandbox</span>
+              {isSimulationActive && (
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: THEME.accent,
+                    display: "inline-block",
+                  }}
+                />
+              )}
             </button>
-            <button
-              onClick={() => setForecastMonths(6)}
-              aria-pressed={forecastMonths === 6}
-              className={`cf-segbtn ${forecastMonths === 6 ? "active" : ""}`}
+
+            {/* Horizon Selector (1, 3, 6, 12 Months) */}
+            <div
               style={{
-                padding: "6px 14px",
-                borderRadius: "var(--radius-sm)",
-                border: "none",
-                background: forecastMonths === 6 ? "var(--surface-0)" : "transparent",
-                fontWeight: 700,
-                fontSize: "12px",
-                cursor: "pointer",
-                boxShadow: forecastMonths === 6 ? "var(--shadow-sm)" : "none",
-                transition: "all 0.2s var(--ease-premium)",
+                display: "flex",
+                background: "var(--surface-1)",
+                padding: "3px",
+                borderRadius: "var(--radius-md)",
+                border: `1.5px solid ${THEME.line}`,
+                gap: "2px",
               }}
             >
-              6 Months
-            </button>
+              {([1, 3, 6, 12] as HorizonMonths[]).map((h) => (
+                <button
+                  key={h}
+                  onClick={() => setForecastMonths(h)}
+                  aria-pressed={forecastMonths === h}
+                  className={`cf-segbtn ${forecastMonths === h ? "active" : ""}`}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "none",
+                    background: forecastMonths === h ? "var(--surface-0)" : "transparent",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {h === 1 ? "1 Mo" : h === 12 ? "1 Year" : `${h} Mos`}
+                </button>
+              ))}
+            </div>
           </div>
         }
       >
         Cash Flow Forecast
       </SectionTitle>
 
-      {/* ── Summary Cards ──────────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        {/* Card 1: Total Projected Inflow */}
+      {/* ── WHAT-IF SCENARIO SIMULATOR DRAWER ──────────────────────────────── */}
+      {expandedSections.simulator && (
         <Card
-          hover
           style={{
-            padding: "18px 20px",
-            border: "1px solid var(--t-line)",
-            borderLeft: `2.5px solid ${THEME.sage}`,
-            borderRadius: 10,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            gap: 12,
+            padding: 20,
+            background: `linear-gradient(135deg, color-mix(in srgb, ${THEME.accent} 5%, var(--surface-0)), var(--surface-0))`,
+            border: `1.5px solid color-mix(in srgb, ${THEME.accent} 30%, var(--t-line))`,
+            borderRadius: 14,
+            boxShadow: "var(--shadow-md)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", color: THEME.sage }}>
-                <ArrowUpRight size={24} />
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: `color-mix(in srgb, ${THEME.accent} 15%, transparent)`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: THEME.accent,
+                }}
+              >
+                <SlidersHorizontal size={17} />
               </div>
               <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: THEME.muted,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  Total Projected Inflow
+                <div style={{ fontSize: 14.5, fontWeight: 800, color: THEME.ink, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>Interactive Scenario Simulator</span>
+                  {isSimulationActive ? (
+                    <Badge variant="gold">Simulation Active</Badge>
+                  ) : (
+                    <Badge variant="muted">Live Model</Badge>
+                  )}
                 </div>
-                <div style={{ fontSize: 10, color: THEME.muted, opacity: 0.8, marginTop: 1 }}>
-                  Next {forecastMonths} Months
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 1 }}>
+                  Test hypothetical income bumps, bonuses, large purchases, or SIP changes across the {forecastMonths}-month horizon.
                 </div>
               </div>
             </div>
+
+            {isSimulationActive && (
+              <Button variant="secondary" size="sm" onClick={resetSimulation} icon={RotateCcw}>
+                Reset Sandbox
+              </Button>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 16,
+              background: "var(--surface-0)",
+              padding: 16,
+              borderRadius: 12,
+              border: `1px solid ${THEME.line}`,
+            }}
+          >
+            {/* Control 1: Salary Hike / Adjustment */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: THEME.ink }}>Salary Hike / Change</span>
+                <span style={{ color: simSalaryHikePct >= 0 ? THEME.sage : THEME.rust }}>
+                  {simSalaryHikePct > 0 ? `+${simSalaryHikePct}%` : `${simSalaryHikePct}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-30"
+                max="50"
+                step="5"
+                value={simSalaryHikePct}
+                onChange={(e) => setSimSalaryHikePct(Number(e.target.value))}
+                style={{ accentColor: THEME.accent, cursor: "pointer" }}
+              />
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>
+                Adjust recurring take-home salary by ±%
+              </span>
+            </div>
+
+            {/* Control 2: Expected Bonus */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: THEME.ink }}>Expected Bonus / Inflow</span>
+                <span style={{ color: THEME.sage }}>₹{simBonusAmount.toLocaleString("en-IN")}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="number"
+                  placeholder="Amount (₹)"
+                  value={simBonusAmount || ""}
+                  onChange={(e) => setSimBonusAmount(Math.max(0, Number(e.target.value)))}
+                  style={{
+                    flex: 1,
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: `1px solid ${THEME.line}`,
+                    background: "var(--surface-1)",
+                    color: THEME.ink,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                />
+                <select
+                  value={simBonusMonth}
+                  onChange={(e) => setSimBonusMonth(e.target.value)}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: `1px solid ${THEME.line}`,
+                    background: "var(--surface-1)",
+                    color: THEME.ink,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {months.map((m) => (
+                    <option key={m.key} value={m.key}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>One-time lump sum receipt</span>
+            </div>
+
+            {/* Control 3: Major Expense / Purchase */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: THEME.ink }}>Planned Major Expense</span>
+                <span style={{ color: THEME.rust }}>₹{simExpenseAmount.toLocaleString("en-IN")}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="number"
+                  placeholder="Amount (₹)"
+                  value={simExpenseAmount || ""}
+                  onChange={(e) => setSimExpenseAmount(Math.max(0, Number(e.target.value)))}
+                  style={{
+                    flex: 1,
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: `1px solid ${THEME.line}`,
+                    background: "var(--surface-1)",
+                    color: THEME.ink,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                />
+                <select
+                  value={simExpenseMonth}
+                  onChange={(e) => setSimExpenseMonth(e.target.value)}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: `1px solid ${THEME.line}`,
+                    background: "var(--surface-1)",
+                    color: THEME.ink,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {months.map((m) => (
+                    <option key={m.key} value={m.key}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>e.g. Travel, Electronics, Renovation</span>
+            </div>
+
+            {/* Control 4: SIP Delta */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: THEME.ink }}>SIP Investment Delta</span>
+                <span style={{ color: simSipDelta >= 0 ? THEME.sage : THEME.rust }}>
+                  {simSipDelta > 0 ? `+₹${simSipDelta.toLocaleString("en-IN")}` : `₹${simSipDelta.toLocaleString("en-IN")}`}/mo
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-50000"
+                max="100000"
+                step="5000"
+                value={simSipDelta}
+                onChange={(e) => setSimSipDelta(Number(e.target.value))}
+                style={{ accentColor: THEME.accent, cursor: "pointer" }}
+              />
+              <span style={{ fontSize: 10.5, color: THEME.muted }}>
+                Increase (+) or pause/reduce (-) monthly SIPs
+              </span>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ── EXECUTIVE KPI HERO MATRIX (5-Card Command Center) ──────────────── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+          gap: 16,
+        }}
+      >
+        {/* Card 1: Starting Liquid Cash */}
+        <Card
+          hover
+          style={{
+            padding: "16px 18px",
+            border: "1px solid var(--t-line)",
+            borderLeft: `3px solid ${THEME.gold}`,
+            borderRadius: 12,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Landmark size={20} style={{ color: THEME.gold }} />
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Current Liquid Cash
+                </div>
+                <div style={{ fontSize: 10, color: THEME.muted }}>Bank Balances</div>
+              </div>
+            </div>
+            <Badge variant="gold">Starting</Badge>
+          </div>
+
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 24,
+              fontWeight: 700,
+              color: THEME.ink,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            <Money value={animatedStartingCash} variant="full" />
+          </div>
+
+          <div style={{ fontSize: 11, color: THEME.muted, display: "flex", justifyContent: "space-between" }}>
+            <span>Runway Buffer:</span>
+            <strong style={{ color: liquidRunwayMonths >= 6 ? THEME.sage : liquidRunwayMonths >= 3 ? THEME.gold : THEME.rust }}>
+              {liquidRunwayMonths.toFixed(1)} Months
+            </strong>
+          </div>
+        </Card>
+
+        {/* Card 2: Total Projected Inflow */}
+        <Card
+          hover
+          style={{
+            padding: "16px 18px",
+            border: "1px solid var(--t-line)",
+            borderLeft: `3px solid ${THEME.sage}`,
+            borderRadius: 12,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ArrowUpRight size={20} style={{ color: THEME.sage }} />
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Projected Inflow
+                </div>
+                <div style={{ fontSize: 10, color: THEME.muted }}>Next {forecastMonths} Months</div>
+              </div>
+            </div>
             <Badge variant="sage">
-              {Math.round(grandInflow > 0 ? (totalInflow / grandInflow) * 100 : 100)}% Regular
+              {Math.round(grandInflow > 0 ? (totalRegularInflow / grandInflow) * 100 : 100)}% Regular
             </Badge>
           </div>
 
           <div
             style={{
               fontFamily: "var(--font-display)",
-              fontSize: 27,
-              fontWeight: 600,
+              fontSize: 24,
+              fontWeight: 700,
               color: THEME.ink,
-              letterSpacing: "-0.01em",
               fontVariantNumeric: "tabular-nums",
             }}
           >
             <Money value={animatedGrandInflow} variant="full" />
           </div>
 
-          {/* Composition bar */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-            <div
-              style={{
-                height: 6,
-                borderRadius: 3,
-                background: `color-mix(in srgb, ${THEME.sage} 15%, var(--t-line))`,
-                overflow: "hidden",
-                display: "flex",
-              }}
-            >
-              <div
-                style={{
-                  width: `${(totalInflow / Math.max(1, grandInflow)) * 100}%`,
-                  background: THEME.sage,
-                  height: "100%",
-                }}
-              />
-              <div
-                style={{
-                  width: `${(eventInflow / Math.max(1, grandInflow)) * 100}%`,
-                  background: "var(--t-accent)",
-                  height: "100%",
-                }}
-              />
+          {/* Progress bar */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ height: 5, borderRadius: 3, background: `color-mix(in srgb, ${THEME.sage} 15%, var(--t-line))`, overflow: "hidden", display: "flex" }}>
+              <div style={{ width: `${(totalRegularInflow / Math.max(1, grandInflow)) * 100}%`, background: THEME.sage, height: "100%" }} />
+              <div style={{ width: `${(eventInflow / Math.max(1, grandInflow)) * 100}%`, background: "var(--t-accent)", height: "100%" }} />
             </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 10,
-                color: THEME.muted,
-                fontWeight: 600,
-              }}
-            >
-              <span>
-                Regular: <Money value={totalInflow} variant="full" />
-              </span>
-              <span>
-                Events: <Money value={eventInflow} variant="full" />
-              </span>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: THEME.muted, fontWeight: 600 }}>
+              <span>Monthly: <Money value={totalMonthlyInflow} variant="full" /></span>
+              <span>Events: <Money value={eventInflow} variant="full" /></span>
             </div>
           </div>
         </Card>
 
-        {/* Card 2: Total Projected Outflow */}
+        {/* Card 3: Total Projected Outflow */}
         <Card
           hover
           style={{
-            padding: "18px 20px",
+            padding: "16px 18px",
             border: "1px solid var(--t-line)",
-            borderLeft: `2.5px solid ${THEME.rust}`,
-            borderRadius: 10,
+            borderLeft: `3px solid ${THEME.rust}`,
+            borderRadius: 12,
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
-            gap: 12,
+            gap: 10,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", color: THEME.rust }}>
-                <ArrowDownRight size={24} />
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ArrowDownRight size={20} style={{ color: THEME.rust }} />
               <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: THEME.muted,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  Total Projected Outflow
+                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Projected Outflow
                 </div>
-                <div style={{ fontSize: 10, color: THEME.muted, opacity: 0.8, marginTop: 1 }}>
-                  Next {forecastMonths} Months
-                </div>
+                <div style={{ fontSize: 10, color: THEME.muted }}>Next {forecastMonths} Months</div>
               </div>
             </div>
             <Badge variant="rust">
-              {Math.round(grandOutflow > 0 ? (totalOutflow / grandOutflow) * 100 : 100)}% Regular
+              {Math.round(grandOutflow > 0 ? (totalRegularOutflow / grandOutflow) * 100 : 100)}% Fixed
             </Badge>
           </div>
 
           <div
             style={{
               fontFamily: "var(--font-display)",
-              fontSize: 27,
-              fontWeight: 600,
+              fontSize: 24,
+              fontWeight: 700,
               color: THEME.ink,
-              letterSpacing: "-0.01em",
               fontVariantNumeric: "tabular-nums",
             }}
           >
             <Money value={animatedGrandOutflow} variant="full" />
           </div>
 
-          {/* Composition bar */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-            <div
-              style={{
-                height: 6,
-                borderRadius: 3,
-                background: `color-mix(in srgb, ${THEME.rust} 15%, var(--t-line))`,
-                overflow: "hidden",
-                display: "flex",
-              }}
-            >
-              <div
-                style={{
-                  width: `${(totalOutflow / Math.max(1, grandOutflow)) * 100}%`,
-                  background: THEME.rust,
-                  height: "100%",
-                }}
-              />
-              <div
-                style={{
-                  width: `${(eventOutflow / Math.max(1, grandOutflow)) * 100}%`,
-                  background: "var(--t-gold)",
-                  height: "100%",
-                }}
-              />
+          {/* Progress bar */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ height: 5, borderRadius: 3, background: `color-mix(in srgb, ${THEME.rust} 15%, var(--t-line))`, overflow: "hidden", display: "flex" }}>
+              <div style={{ width: `${(totalRegularOutflow / Math.max(1, grandOutflow)) * 100}%`, background: THEME.rust, height: "100%" }} />
+              <div style={{ width: `${(eventOutflow / Math.max(1, grandOutflow)) * 100}%`, background: "var(--t-gold)", height: "100%" }} />
             </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 10,
-                color: THEME.muted,
-                fontWeight: 600,
-              }}
-            >
-              <span>
-                Regular: <Money value={totalOutflow} variant="full" />
-              </span>
-              <span>
-                Events: <Money value={eventOutflow} variant="full" />
-              </span>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: THEME.muted, fontWeight: 600 }}>
+              <span>Monthly: <Money value={totalMonthlyOutflow} variant="full" /></span>
+              <span>Events: <Money value={eventOutflow} variant="full" /></span>
             </div>
           </div>
         </Card>
 
-        {/* Card 3: Net Cash Flow */}
+        {/* Card 4: Net Cash Flow Surplus/Deficit */}
         <Card
           hover
           style={{
-            padding: "18px 20px",
+            padding: "16px 18px",
             border: "1px solid var(--t-line)",
-            borderLeft: `2.5px solid ${netCashFlow >= 0 ? THEME.sage : THEME.rust}`,
-            borderRadius: 10,
+            borderLeft: `3px solid ${netCashFlow >= 0 ? THEME.sage : THEME.rust}`,
+            borderRadius: 12,
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
-            gap: 12,
+            gap: 10,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  color: netCashFlow >= 0 ? THEME.sage : THEME.rust,
-                }}
-              >
-                {netCashFlow >= 0 ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {netCashFlow >= 0 ? <TrendingUp size={20} style={{ color: THEME.sage }} /> : <TrendingDown size={20} style={{ color: THEME.rust }} />}
               <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: THEME.muted,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  Net Cash Flow
+                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Net Cash Delta
                 </div>
-                <div style={{ fontSize: 10, color: THEME.muted, opacity: 0.8, marginTop: 1 }}>
-                  Maturities & Closures Included
-                </div>
+                <div style={{ fontSize: 10, color: THEME.muted }}>Total Period Flow</div>
               </div>
             </div>
             <Badge variant={netCashFlow >= 0 ? "sage" : "rust"}>
-              {netCashFlow >= 0 ? "Surplus" : "Deficit"}
+              {netCashFlow >= 0 ? `+${retentionRate.toFixed(0)}% Saved` : "Deficit"}
             </Badge>
           </div>
 
           <div
             style={{
               fontFamily: "var(--font-display)",
-              fontSize: 27,
-              fontWeight: 600,
+              fontSize: 24,
+              fontWeight: 700,
               color: netCashFlow >= 0 ? THEME.sage : THEME.rust,
-              letterSpacing: "-0.01em",
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {animatedNetCashFlow < 0 ? "-" : ""}
+            {animatedNetCashFlow < 0 ? "-" : "+"}
             <Money value={Math.abs(animatedNetCashFlow)} variant="full" />
           </div>
 
-          {/* Cash Flow Ratio indicator */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-            <div
-              style={{
-                height: 6,
-                borderRadius: 3,
-                background: "var(--t-line)",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.min(100, Math.max(0, (grandInflow / Math.max(1, grandInflow + grandOutflow)) * 100))}%`,
-                  background: netCashFlow >= 0 ? THEME.sage : THEME.rust,
-                  height: "100%",
-                }}
-              />
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 10,
-                color: THEME.muted,
-                fontWeight: 600,
-              }}
-            >
-              <span>Coverage Ratio: {(grandInflow / Math.max(1, grandOutflow)).toFixed(2)}x</span>
-              <span>{netCashFlow >= 0 ? "Positive Savings" : "Capital Deficit"}</span>
-            </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: THEME.muted }}>
+            <span>Coverage Ratio:</span>
+            <strong>{(grandInflow / Math.max(1, grandOutflow)).toFixed(2)}x</strong>
           </div>
         </Card>
 
-        {/* Card 4: Monthly Surplus/Deficit */}
+        {/* Card 5: Projected Ending Liquid Balance */}
         <Card
           hover
           style={{
-            padding: "18px 20px",
+            padding: "16px 18px",
             border: "1px solid var(--t-line)",
-            borderLeft: `2.5px solid ${netMonthly >= 0 ? THEME.sage : THEME.rust}`,
-            borderRadius: 10,
+            borderLeft: `3px solid ${projectedEndingBalance >= startingLiquidCash ? THEME.sage : THEME.accent}`,
+            borderRadius: 12,
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
-            gap: 12,
+            gap: 10,
+            background: `color-mix(in srgb, var(--t-accent) 3%, var(--surface-0))`,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  color: netMonthly >= 0 ? THEME.sage : THEME.rust,
-                }}
-              >
-                {netMonthly >= 0 ? <ArrowUpRight size={24} /> : <ArrowDownRight size={24} />}
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Wallet size={20} style={{ color: THEME.accent }} />
               <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: THEME.muted,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  Monthly Surplus
+                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Ending Bank Cash
                 </div>
-                <div style={{ fontSize: 10, color: THEME.muted, opacity: 0.8, marginTop: 1 }}>
-                  Regular Income & Expenses
-                </div>
+                <div style={{ fontSize: 10, color: THEME.muted }}>After {forecastMonths} Months</div>
               </div>
             </div>
-            <Badge variant={netMonthly >= 0 ? "sage" : "rust"}>
-              {netMonthly >= 0 ? "Stable" : "Tight"}
-            </Badge>
+            <Badge variant="accent">Projected</Badge>
           </div>
 
           <div
             style={{
               fontFamily: "var(--font-display)",
-              fontSize: 27,
-              fontWeight: 600,
-              color: netMonthly >= 0 ? THEME.sage : THEME.rust,
-              letterSpacing: "-0.01em",
+              fontSize: 24,
+              fontWeight: 700,
+              color: projectedEndingBalance >= 0 ? THEME.ink : THEME.rust,
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {animatedNetMonthly < 0 ? "-" : ""}
-            <Money value={Math.abs(animatedNetMonthly)} variant="full" />
+            <Money value={animatedEndingBalance} variant="full" />
           </div>
 
-          {/* Monthly progress indicator */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-            <div
-              style={{
-                height: 6,
-                borderRadius: 3,
-                background: "var(--t-line)",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.min(100, Math.max(0, (totalMonthlyInflow / Math.max(1, totalMonthlyInflow + totalMonthlyOutflow)) * 100))}%`,
-                  background: netMonthly >= 0 ? THEME.sage : THEME.rust,
-                  height: "100%",
-                }}
-              />
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 10,
-                color: THEME.muted,
-                fontWeight: 600,
-              }}
-            >
-              <span>
-                In: <Money value={totalMonthlyInflow} variant="full" />
-              </span>
-              <span>
-                Out: <Money value={totalMonthlyOutflow} variant="full" />
-              </span>
-            </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: THEME.muted }}>
+            <span>Buffer Change:</span>
+            <strong style={{ color: netCashFlow >= 0 ? THEME.sage : THEME.rust }}>
+              {netCashFlow >= 0 ? "+" : ""}{((netCashFlow / Math.max(1, startingLiquidCash)) * 100).toFixed(1)}%
+            </strong>
           </div>
         </Card>
       </div>
 
-      {/* ── Chart ──────────────────────────────────────────────────────────── */}
-      <Card style={{ padding: 24, marginBottom: 28 }}>
+      {/* ── INTERACTIVE CHART & VISUALIZATION ──────────────────────────────── */}
+      <Card style={{ padding: 24, borderRadius: 14 }}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            justifyContent: "space-between",
             marginBottom: 20,
+            flexWrap: "wrap",
+            gap: 12,
           }}
         >
-          <BarChart2 size={18} style={{ color: THEME.accent }} />
-          <span style={{ fontSize: 16, fontWeight: 700, color: THEME.ink }}>
-            Monthly Cash Flow Projection
-          </span>
-        </div>
-        <div style={{ width: "100%", height: 320, position: "relative" }}><ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
-            barGap={4}
-            barCategoryGap="20%"
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: `color-mix(in srgb, ${THEME.accent} 15%, transparent)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: THEME.accent,
+              }}
+            >
+              <BarChart2 size={17} />
+            </div>
+            <div>
+              <span style={{ fontSize: 16, fontWeight: 800, color: THEME.ink }}>
+                {chartViewMode === "flow"
+                  ? "Monthly Inflow vs Outflow & Cumulative Flow"
+                  : chartViewMode === "balance"
+                    ? "Liquid Bank Balance Trajectory"
+                    : "Monthly Net Cash Delta"}
+              </span>
+              <div style={{ fontSize: 11, color: THEME.muted }}>
+                Projected trajectory over the next {forecastMonths} months ({months[0]?.label} - {months[months.length - 1]?.label})
+              </div>
+            </div>
+          </div>
+
+          {/* Chart Mode Switcher */}
+          <div
+            style={{
+              display: "flex",
+              background: "var(--surface-1)",
+              padding: "3px",
+              borderRadius: "var(--radius-md)",
+              border: `1.5px solid ${THEME.line}`,
+              gap: "2px",
+            }}
           >
-            <defs>
-              <linearGradient id="inflowGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={THEME.sage} stopOpacity={isDark ? 1 : 0.85} />
-                <stop offset="100%" stopColor={THEME.sage} stopOpacity={isDark ? 0.5 : 0.15} />
-              </linearGradient>
-              <linearGradient id="outflowGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={THEME.rust} stopOpacity={isDark ? 1 : 0.85} />
-                <stop offset="100%" stopColor={THEME.rust} stopOpacity={isDark ? 0.5 : 0.15} />
-              </linearGradient>
-              <filter id="cfGlowInflow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow
-                  dx="0"
-                  dy="2"
-                  stdDeviation="4"
-                  floodColor={THEME.sage}
-                  floodOpacity={isDark ? "0.55" : "0.4"}
+            <button
+              onClick={() => setChartViewMode("flow")}
+              className={`cf-segbtn ${chartViewMode === "flow" ? "active" : ""}`}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "var(--radius-sm)",
+                border: "none",
+                background: chartViewMode === "flow" ? "var(--surface-0)" : "transparent",
+                fontWeight: 700,
+                fontSize: "11.5px",
+                cursor: "pointer",
+              }}
+            >
+              Flow & Cumulative
+            </button>
+            <button
+              onClick={() => setChartViewMode("balance")}
+              className={`cf-segbtn ${chartViewMode === "balance" ? "active" : ""}`}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "var(--radius-sm)",
+                border: "none",
+                background: chartViewMode === "balance" ? "var(--surface-0)" : "transparent",
+                fontWeight: 700,
+                fontSize: "11.5px",
+                cursor: "pointer",
+              }}
+            >
+              Bank Balance Curve
+            </button>
+            <button
+              onClick={() => setChartViewMode("delta")}
+              className={`cf-segbtn ${chartViewMode === "delta" ? "active" : ""}`}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "var(--radius-sm)",
+                border: "none",
+                background: chartViewMode === "delta" ? "var(--surface-0)" : "transparent",
+                fontWeight: 700,
+                fontSize: "11.5px",
+                cursor: "pointer",
+              }}
+            >
+              Net Delta
+            </button>
+          </div>
+        </div>
+
+        <div style={{ width: "100%", height: 320, position: "relative" }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            {chartViewMode === "flow" ? (
+              <ComposedChart
+                data={chartData}
+                margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
+                barGap={4}
+                barCategoryGap="22%"
+              >
+                <defs>
+                  <linearGradient id="inflowGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={THEME.sage} stopOpacity={isDark ? 1 : 0.9} />
+                    <stop offset="100%" stopColor={THEME.sage} stopOpacity={isDark ? 0.45 : 0.15} />
+                  </linearGradient>
+                  <linearGradient id="outflowGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={THEME.rust} stopOpacity={isDark ? 1 : 0.9} />
+                    <stop offset="100%" stopColor={THEME.rust} stopOpacity={isDark ? 0.45 : 0.15} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} opacity={0.3} />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11.5, fontWeight: 600, fill: THEME.muted }}
+                  axisLine={{ stroke: THEME.line }}
+                  tickLine={false}
                 />
-              </filter>
-              <filter id="cfGlowOutflow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow
-                  dx="0"
-                  dy="2"
-                  stdDeviation="4"
-                  floodColor={THEME.rust}
-                  floodOpacity={isDark ? "0.55" : "0.4"}
+                <YAxis
+                  tick={{ fontSize: 11, fill: THEME.muted }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINRFull(v))}
+                  width={72}
                 />
-              </filter>
-            </defs>
-            <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} opacity={0.3} />
-            <XAxis
-              dataKey="month"
-              tick={{ fontSize: 11, fontWeight: 600, fill: THEME.muted }}
-              axisLine={{ stroke: THEME.line }}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fontSize: 11, fill: THEME.muted }}
-              axisLine={false}
-              tickLine={false}
-              tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINRFull(v))}
-              width={70}
-            />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: THEME.line, opacity: 0.4 }} />
-            <Legend
-              verticalAlign="top"
-              height={36}
-              iconType="circle"
-              iconSize={8}
-              wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingBottom: 10 }}
-            />
-            <Bar
-              dataKey="Inflow"
-              name="Projected Inflow"
-              fill="url(#inflowGrad)"
-              stroke={THEME.sage}
-              strokeWidth={1}
-              radius={[4, 4, 0, 0]}
-              maxBarSize={40}
-              style={{ filter: "url(#cfGlowInflow)" }}
-            />
-            <Bar
-              dataKey="Outflow"
-              name="Projected Outflow"
-              fill="url(#outflowGrad)"
-              stroke={THEME.rust}
-              strokeWidth={1}
-              radius={[4, 4, 0, 0]}
-              maxBarSize={40}
-              style={{ filter: "url(#cfGlowOutflow)" }}
-            />
-            <Line
-              type="monotone"
-              dataKey="Cumulative"
-              stroke={THEME.accent}
-              strokeWidth={3}
-              dot={{ fill: THEME.accent, stroke: "var(--surface-0)", strokeWidth: 2, r: 5 }}
-              activeDot={{ fill: THEME.accent, stroke: "var(--surface-0)", strokeWidth: 2, r: 7 }}
-              name="Cumulative Surplus"
-            />
-          </ComposedChart>
-        </ResponsiveContainer></div>
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: THEME.line, opacity: 0.3 }} />
+                <Legend
+                  verticalAlign="top"
+                  height={36}
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingBottom: 10 }}
+                />
+                <Bar
+                  dataKey="Inflow"
+                  name="Projected Inflow"
+                  fill="url(#inflowGrad)"
+                  stroke={THEME.sage}
+                  strokeWidth={1}
+                  radius={[5, 5, 0, 0]}
+                  maxBarSize={38}
+                />
+                <Bar
+                  dataKey="Outflow"
+                  name="Projected Outflow"
+                  fill="url(#outflowGrad)"
+                  stroke={THEME.rust}
+                  strokeWidth={1}
+                  radius={[5, 5, 0, 0]}
+                  maxBarSize={38}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Cumulative"
+                  stroke={THEME.accent}
+                  strokeWidth={3}
+                  dot={{ fill: THEME.accent, stroke: "var(--surface-0)", strokeWidth: 2, r: 4 }}
+                  activeDot={{ fill: THEME.accent, stroke: "var(--surface-0)", strokeWidth: 2, r: 6 }}
+                  name="Cumulative Surplus"
+                />
+              </ComposedChart>
+            ) : chartViewMode === "balance" ? (
+              <AreaChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="balanceGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={THEME.accent} stopOpacity={0.4} />
+                    <stop offset="100%" stopColor={THEME.accent} stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} opacity={0.3} />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11.5, fontWeight: 600, fill: THEME.muted }}
+                  axisLine={{ stroke: THEME.line }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: THEME.muted }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINRFull(v))}
+                  width={72}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <ReferenceLine
+                  y={startingLiquidCash}
+                  stroke={THEME.gold}
+                  strokeDasharray="3 3"
+                  label={{ value: "Starting Cash", fill: THEME.gold, fontSize: 10.5, position: "insideTopRight" }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="EndingBalance"
+                  stroke={THEME.accent}
+                  strokeWidth={3}
+                  fill="url(#balanceGrad)"
+                  name="Projected Bank Balance"
+                />
+              </AreaChart>
+            ) : (
+              <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="4 4" stroke={THEME.line} opacity={0.3} />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11.5, fontWeight: 600, fill: THEME.muted }}
+                  axisLine={{ stroke: THEME.line }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: THEME.muted }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => (privacyMode ? "••••" : fmtINRFull(v))}
+                  width={72}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <ReferenceLine y={0} stroke={THEME.line} strokeWidth={1.5} />
+                <Bar
+                  dataKey="NetDelta"
+                  name="Net Cash Delta"
+                  fill={THEME.sage}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={45}
+                />
+              </ComposedChart>
+            )}
+          </ResponsiveContainer>
+        </div>
       </Card>
 
-      {/* ── Inflows & Outflows Tables ──────────────────────────────────────── */}
+      {/* ── MONTH-BY-MONTH FINANCIAL MATRIX ───────────────────────────────── */}
+      <Card style={{ padding: 0, overflow: "hidden", borderRadius: 14 }}>
+        <div
+          onClick={() => toggleSection("matrix")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleSection("matrix");
+            }
+          }}
+          aria-expanded={expandedSections.matrix}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px 20px",
+            cursor: "pointer",
+            borderBottom: expandedSections.matrix ? `1px solid ${THEME.line}` : "none",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Calendar size={17} style={{ color: THEME.accent }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: THEME.ink }}>
+              Month-by-Month Cash Flow Matrix
+            </span>
+            <Badge variant="muted">{months.length} Months</Badge>
+          </div>
+          {expandedSections.matrix ? (
+            <ChevronDown size={17} style={{ color: THEME.muted }} />
+          ) : (
+            <ChevronRight size={17} style={{ color: THEME.muted }} />
+          )}
+        </div>
+
+        {expandedSections.matrix && (
+          <div style={{ padding: 18 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(auto-fit, minmax(200px, 1fr))`,
+                gap: 12,
+              }}
+            >
+              {monthMatrix.map((m) => {
+                const isPositive = m.netDelta >= 0;
+                return (
+                  <div
+                    key={m.key}
+                    className="cf-matrix-card"
+                    onClick={() => setSelectedMonthKey(m.key)}
+                    style={{
+                      background: "var(--surface-0)",
+                      border: `1.5px solid ${THEME.line}`,
+                      borderRadius: 12,
+                      padding: "14px 16px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 800, color: THEME.ink }}>
+                        {m.label}
+                      </span>
+                      <Badge variant={isPositive ? "sage" : "rust"}>
+                        {isPositive ? "Surplus" : "Deficit"}
+                      </Badge>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: THEME.muted }}>
+                        <span>Inflow:</span>
+                        <strong style={{ color: THEME.sage }}>+<Money value={m.totalInflow} variant="exact" /></strong>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: THEME.muted }}>
+                        <span>Outflow:</span>
+                        <strong style={{ color: THEME.rust }}>-<Money value={m.totalOutflow} variant="exact" /></strong>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          paddingTop: 4,
+                          borderTop: `1px solid ${THEME.line}`,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span style={{ color: THEME.ink }}>Net Flow:</span>
+                        <span style={{ color: isPositive ? THEME.sage : THEME.rust }}>
+                          {isPositive ? "+" : ""}<Money value={m.netDelta} variant="exact" />
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: THEME.muted, fontSize: 11 }}>
+                        <span>Ending Cash:</span>
+                        <strong style={{ color: THEME.accent }}><Money value={m.endingBalance} variant="exact" /></strong>
+                      </div>
+                    </div>
+
+                    {m.eventsCount > 0 && (
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          color: THEME.accent,
+                          background: `color-mix(in srgb, ${THEME.accent} 10%, transparent)`,
+                          padding: "3px 8px",
+                          borderRadius: 6,
+                          textAlign: "center",
+                        }}
+                      >
+                        ⚡ {m.eventsCount} one-time event{m.eventsCount > 1 ? "s" : ""}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* ── INFLOWS & OUTFLOWS COMMAND CENTER ──────────────────────────────── */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(340px, 100%), 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))",
           gap: 20,
-          marginBottom: 28,
         }}
       >
-        {/* Regular Inflows */}
-        <Card style={{ padding: 0, overflow: "hidden" }}>
+        {/* ── REGULAR INFLOWS ── */}
+        <Card style={{ padding: 0, overflow: "hidden", borderRadius: 14 }}>
           <div
             onClick={() => toggleSection("inflows")}
             role="button"
@@ -2031,23 +2561,24 @@ export const CashFlowTab = ({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <ArrowUpRight size={16} style={{ color: THEME.sage }} />
+              <ArrowUpRight size={17} style={{ color: THEME.sage }} />
               <span style={{ fontSize: 15, fontWeight: 700, color: THEME.ink }}>
                 Regular Inflows
               </span>
               <Badge variant="sage">{inflows.length}</Badge>
             </div>
             {expandedSections.inflows ? (
-              <ChevronDown size={16} style={{ color: THEME.muted }} />
+              <ChevronDown size={17} style={{ color: THEME.muted }} />
             ) : (
-              <ChevronRight size={16} style={{ color: THEME.muted }} />
+              <ChevronRight size={17} style={{ color: THEME.muted }} />
             )}
           </div>
+
           {expandedSections.inflows && (
             <div style={{ padding: "8px 0" }}>
               {inflows.length === 0 ? (
                 <div style={{ padding: 24, textAlign: "center", color: THEME.muted, fontSize: 13 }}>
-                  No regular inflows detected
+                  No regular inflows match filters
                 </div>
               ) : (
                 <div>
@@ -2070,11 +2601,13 @@ export const CashFlowTab = ({
                     <div style={{ textAlign: "right", paddingRight: 8 }}>Monthly</div>
                     <div style={{ textAlign: "right" }}>{forecastMonths}-Mo Total</div>
                   </div>
+
                   {inflows.map((item, idx) => {
                     const Icon = item.icon;
                     const pctOfTotal =
                       totalMonthlyInflow > 0 ? (item.monthly / totalMonthlyInflow) * 100 : 0;
                     const isSalaryItem = item.category === "Salary";
+
                     return (
                       <div
                         key={idx}
@@ -2089,8 +2622,20 @@ export const CashFlowTab = ({
                         }}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ display: "flex", alignItems: "center", color: THEME.sage, flexShrink: 0 }}>
-                            <Icon size={18} />
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "50%",
+                              background: `color-mix(in srgb, ${THEME.sage} 12%, transparent)`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: THEME.sage,
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Icon size={16} />
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -2106,8 +2651,8 @@ export const CashFlowTab = ({
                                     alignItems: "center",
                                     gap: 3,
                                     fontSize: 10,
-                                    fontWeight: 600,
-                                    padding: "2px 7px",
+                                    fontWeight: 700,
+                                    padding: "2px 8px",
                                     borderRadius: 12,
                                     background: `color-mix(in srgb, ${THEME.sage} 12%, transparent)`,
                                     color: THEME.sage,
@@ -2121,21 +2666,14 @@ export const CashFlowTab = ({
                                 </button>
                               )}
                             </div>
-                            <span style={{ fontSize: 10, color: THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <span style={{ fontSize: 10.5, color: THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                               {item.sourceLabel ? `${item.sourceLabel} • ` : ""}{item.category} • {pctOfTotal.toFixed(0)}% of total
                             </span>
                           </div>
                         </div>
 
                         <div style={{ textAlign: "right", paddingRight: 8 }}>
-                          <span
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: THEME.sage,
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
+                          <span style={{ fontSize: 13, fontWeight: 700, color: THEME.sage, fontVariantNumeric: "tabular-nums" }}>
                             <Money value={item.monthly} variant="exact" />
                           </span>
                           <span style={{ display: "block", fontSize: 10, color: THEME.muted }}>
@@ -2144,14 +2682,7 @@ export const CashFlowTab = ({
                         </div>
 
                         <div style={{ textAlign: "right" }}>
-                          <span
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: THEME.ink,
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
+                          <span style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, fontVariantNumeric: "tabular-nums" }}>
                             <Money value={item.monthly * forecastMonths} variant="exact" />
                           </span>
                           <span style={{ display: "block", fontSize: 10, color: THEME.muted }}>
@@ -2184,7 +2715,7 @@ export const CashFlowTab = ({
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <Info size={13} style={{ color: THEME.gold || "#f59e0b", flexShrink: 0 }} />
                                 <span>
-                                  Bank credit reflects <strong>₹{Math.round(effectiveSalaryInfo.amount).toLocaleString("en-IN")}</strong>/mo. Official Salary Slips have take-home of <strong>₹{Math.round(salaryCandidates.slip.monthly).toLocaleString("en-IN")}</strong>/mo.
+                                  Bank reflects <strong>₹{Math.round(effectiveSalaryInfo.amount).toLocaleString("en-IN")}</strong>/mo. Salary Slips reflect <strong>₹{Math.round(salaryCandidates.slip.monthly).toLocaleString("en-IN")}</strong>/mo.
                                 </span>
                               </div>
                               <span style={{ color: THEME.accent, fontWeight: 700, fontSize: 11, textDecoration: "underline" }}>
@@ -2195,6 +2726,7 @@ export const CashFlowTab = ({
                       </div>
                     );
                   })}
+
                   {/* Total Row */}
                   <div
                     style={{
@@ -2208,50 +2740,22 @@ export const CashFlowTab = ({
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <span style={{ fontSize: 13, fontWeight: 800, color: THEME.ink }}>
-                        Total Inflow
+                        Total Regular Inflow
                       </span>
                     </div>
                     <div style={{ textAlign: "right", paddingRight: 8 }}>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 800,
-                          color: THEME.sage,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
+                      <span style={{ fontSize: 13.5, fontWeight: 800, color: THEME.sage, fontVariantNumeric: "tabular-nums" }}>
                         <Money value={totalMonthlyInflow} variant="exact" />
                       </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 10,
-                          color: THEME.sage,
-                          fontWeight: 600,
-                        }}
-                      >
+                      <span style={{ display: "block", fontSize: 10, color: THEME.sage, fontWeight: 600 }}>
                         /mo
                       </span>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 800,
-                          color: THEME.sage,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        <Money value={totalInflow} variant="exact" />
+                      <span style={{ fontSize: 13.5, fontWeight: 800, color: THEME.sage, fontVariantNumeric: "tabular-nums" }}>
+                        <Money value={totalRegularInflow} variant="exact" />
                       </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 10,
-                          color: THEME.sage,
-                          fontWeight: 600,
-                        }}
-                      >
+                      <span style={{ display: "block", fontSize: 10, color: THEME.sage, fontWeight: 600 }}>
                         {forecastMonths}-mo Total
                       </span>
                     </div>
@@ -2262,8 +2766,8 @@ export const CashFlowTab = ({
           )}
         </Card>
 
-        {/* Regular Outflows */}
-        <Card style={{ padding: 0, overflow: "hidden" }}>
+        {/* ── REGULAR OUTFLOWS ── */}
+        <Card style={{ padding: 0, overflow: "hidden", borderRadius: 14 }}>
           <div
             onClick={() => toggleSection("outflows")}
             role="button"
@@ -2285,23 +2789,24 @@ export const CashFlowTab = ({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <ArrowDownRight size={16} style={{ color: THEME.rust }} />
+              <ArrowDownRight size={17} style={{ color: THEME.rust }} />
               <span style={{ fontSize: 15, fontWeight: 700, color: THEME.ink }}>
                 Regular Outflows
               </span>
               <Badge variant="rust">{outflows.length}</Badge>
             </div>
             {expandedSections.outflows ? (
-              <ChevronDown size={16} style={{ color: THEME.muted }} />
+              <ChevronDown size={17} style={{ color: THEME.muted }} />
             ) : (
-              <ChevronRight size={16} style={{ color: THEME.muted }} />
+              <ChevronRight size={17} style={{ color: THEME.muted }} />
             )}
           </div>
+
           {expandedSections.outflows && (
             <div style={{ padding: "8px 0" }}>
               {outflows.length === 0 ? (
                 <div style={{ padding: 24, textAlign: "center", color: THEME.muted, fontSize: 13 }}>
-                  No regular outflows detected
+                  No regular outflows match filters
                 </div>
               ) : (
                 <div>
@@ -2324,10 +2829,12 @@ export const CashFlowTab = ({
                     <div style={{ textAlign: "right", paddingRight: 8 }}>Monthly</div>
                     <div style={{ textAlign: "right" }}>{forecastMonths}-Mo Total</div>
                   </div>
+
                   {outflows.map((item, idx) => {
                     const Icon = item.icon;
                     const pctOfTotal =
                       totalMonthlyOutflow > 0 ? (item.monthly / totalMonthlyOutflow) * 100 : 0;
+
                     return (
                       <div
                         key={idx}
@@ -2342,28 +2849,33 @@ export const CashFlowTab = ({
                         }}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ display: "flex", alignItems: "center", color: THEME.rust, flexShrink: 0 }}>
-                            <Icon size={18} />
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "50%",
+                              background: `color-mix(in srgb, ${THEME.rust} 12%, transparent)`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: THEME.rust,
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Icon size={16} />
                           </div>
                           <div style={{ display: "flex", flexDirection: "column" }}>
                             <span style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
                               {item.name}
                             </span>
-                            <span style={{ fontSize: 10, color: THEME.muted }}>
+                            <span style={{ fontSize: 10.5, color: THEME.muted }}>
                               {item.category} • {pctOfTotal.toFixed(0)}% of total
                             </span>
                           </div>
                         </div>
 
                         <div style={{ textAlign: "right", paddingRight: 8 }}>
-                          <span
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: THEME.rust,
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
+                          <span style={{ fontSize: 13, fontWeight: 700, color: THEME.rust, fontVariantNumeric: "tabular-nums" }}>
                             <Money value={item.monthly} variant="exact" />
                           </span>
                           <span style={{ display: "block", fontSize: 10, color: THEME.muted }}>
@@ -2372,14 +2884,7 @@ export const CashFlowTab = ({
                         </div>
 
                         <div style={{ textAlign: "right" }}>
-                          <span
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: THEME.ink,
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
+                          <span style={{ fontSize: 13, fontWeight: 700, color: THEME.ink, fontVariantNumeric: "tabular-nums" }}>
                             <Money value={item.monthly * forecastMonths} variant="exact" />
                           </span>
                           <span style={{ display: "block", fontSize: 10, color: THEME.muted }}>
@@ -2389,6 +2894,7 @@ export const CashFlowTab = ({
                       </div>
                     );
                   })}
+
                   {/* Total Row */}
                   <div
                     style={{
@@ -2402,50 +2908,22 @@ export const CashFlowTab = ({
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <span style={{ fontSize: 13, fontWeight: 800, color: THEME.ink }}>
-                        Total Outflow
+                        Total Regular Outflow
                       </span>
                     </div>
                     <div style={{ textAlign: "right", paddingRight: 8 }}>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 800,
-                          color: THEME.rust,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
+                      <span style={{ fontSize: 13.5, fontWeight: 800, color: THEME.rust, fontVariantNumeric: "tabular-nums" }}>
                         <Money value={totalMonthlyOutflow} variant="exact" />
                       </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 10,
-                          color: THEME.rust,
-                          fontWeight: 600,
-                        }}
-                      >
+                      <span style={{ display: "block", fontSize: 10, color: THEME.rust, fontWeight: 600 }}>
                         /mo
                       </span>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 800,
-                          color: THEME.rust,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        <Money value={totalOutflow} variant="exact" />
+                      <span style={{ fontSize: 13.5, fontWeight: 800, color: THEME.rust, fontVariantNumeric: "tabular-nums" }}>
+                        <Money value={totalRegularOutflow} variant="exact" />
                       </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 10,
-                          color: THEME.rust,
-                          fontWeight: 600,
-                        }}
-                      >
+                      <span style={{ display: "block", fontSize: 10, color: THEME.rust, fontWeight: 600 }}>
                         {forecastMonths}-mo Total
                       </span>
                     </div>
@@ -2457,8 +2935,8 @@ export const CashFlowTab = ({
         </Card>
       </div>
 
-      {/* ── Upcoming Events Timeline ───────────────────────────────────────── */}
-      <Card style={{ padding: 0, overflow: "hidden" }}>
+      {/* ── UPCOMING EVENTS TIMELINE ───────────────────────────────────────── */}
+      <Card style={{ padding: 0, overflow: "hidden", borderRadius: 14 }}>
         <div
           onClick={() => toggleSection("events")}
           role="button"
@@ -2480,21 +2958,24 @@ export const CashFlowTab = ({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <CalendarClock size={16} style={{ color: THEME.accent }} />
-            <span style={{ fontSize: 15, fontWeight: 700, color: THEME.ink }}>Upcoming Events</span>
+            <CalendarClock size={17} style={{ color: THEME.accent }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: THEME.ink }}>
+              Upcoming One-Time Capital Events & Maturities
+            </span>
             <Badge variant="accent">{events.length}</Badge>
           </div>
           {expandedSections.events ? (
-            <ChevronDown size={16} style={{ color: THEME.muted }} />
+            <ChevronDown size={17} style={{ color: THEME.muted }} />
           ) : (
-            <ChevronRight size={16} style={{ color: THEME.muted }} />
+            <ChevronRight size={17} style={{ color: THEME.muted }} />
           )}
         </div>
+
         {expandedSections.events && (
-          <div style={{ padding: "0" }}>
+          <div>
             {events.length === 0 ? (
               <div style={{ padding: 32, textAlign: "center", color: THEME.muted, fontSize: 13 }}>
-                No one-time events in the next {forecastMonths} months
+                No one-time events scheduled in the next {forecastMonths} months.
               </div>
             ) : (
               <div style={{ padding: "16px 20px", position: "relative" }}>
@@ -2528,8 +3009,6 @@ export const CashFlowTab = ({
                           relativeLabel = "Today";
                         } else if (diffDays === 1) {
                           relativeLabel = "Tomorrow";
-                        } else if (diffDays === -1) {
-                          relativeLabel = "Yesterday";
                         } else if (diffDays > 1) {
                           if (diffDays > 30) {
                             const diffMonths = Math.round(diffDays / 30.4);
@@ -2539,12 +3018,7 @@ export const CashFlowTab = ({
                           }
                         } else {
                           const absDays = Math.abs(diffDays);
-                          if (absDays > 30) {
-                            const diffMonths = Math.round(absDays / 30.4);
-                            relativeLabel = `${diffMonths} month${diffMonths > 1 ? "s" : ""} ago`;
-                          } else {
-                            relativeLabel = `${absDays} day${absDays > 1 ? "s" : ""} ago`;
-                          }
+                          relativeLabel = `${absDays}d ago`;
                         }
                       } catch (e) {
                         // ignore
@@ -2649,6 +3123,11 @@ export const CashFlowTab = ({
                             >
                               {event.category}
                             </Badge>
+                            {event.isSimulated && (
+                              <Badge variant="gold" style={{ fontSize: "10px", padding: "2px 6px" }}>
+                                Simulated
+                              </Badge>
+                            )}
                           </div>
 
                           {/* Amount */}
@@ -2657,7 +3136,7 @@ export const CashFlowTab = ({
                               fontSize: 14,
                               fontWeight: 800,
                               color: isInflow ? THEME.sage : THEME.rust,
-                              minWidth: 110,
+                              minWidth: 120,
                               textAlign: "right",
                               fontVariantNumeric: "tabular-nums",
                             }}
@@ -2675,6 +3154,123 @@ export const CashFlowTab = ({
           </div>
         )}
       </Card>
+
+      {/* ── MONTH INSPECTOR MODAL ──────────────────────────────────────────── */}
+      {selectedMonthData && (
+        <Modal
+          title={`${selectedMonthData.label} Detailed Financial Breakdown`}
+          onClose={() => setSelectedMonthKey(null)}
+          maxWidth={600}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Quick Metrics Header */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 10,
+                background: "var(--surface-1)",
+                padding: 14,
+                borderRadius: 12,
+                border: `1px solid ${THEME.line}`,
+              }}
+            >
+              <div>
+                <span style={{ fontSize: 10.5, color: THEME.muted, textTransform: "uppercase", fontWeight: 700 }}>
+                  Starting Cash
+                </span>
+                <div style={{ fontSize: 15, fontWeight: 800, color: THEME.ink, marginTop: 2 }}>
+                  <Money value={selectedMonthData.startingBalance} variant="exact" />
+                </div>
+              </div>
+              <div>
+                <span style={{ fontSize: 10.5, color: THEME.muted, textTransform: "uppercase", fontWeight: 700 }}>
+                  Net Month Flow
+                </span>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 800,
+                    color: selectedMonthData.netDelta >= 0 ? THEME.sage : THEME.rust,
+                    marginTop: 2,
+                  }}
+                >
+                  {selectedMonthData.netDelta >= 0 ? "+" : ""}<Money value={selectedMonthData.netDelta} variant="exact" />
+                </div>
+              </div>
+              <div>
+                <span style={{ fontSize: 10.5, color: THEME.muted, textTransform: "uppercase", fontWeight: 700 }}>
+                  Closing Cash
+                </span>
+                <div style={{ fontSize: 15, fontWeight: 800, color: THEME.accent, marginTop: 2 }}>
+                  <Money value={selectedMonthData.endingBalance} variant="exact" />
+                </div>
+              </div>
+            </div>
+
+            {/* Income & Expense Breakdown */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: THEME.ink }}>
+                Cash Flow Summary for {selectedMonthData.label}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "var(--surface-0)", borderRadius: 6 }}>
+                  <span>Recurring Inflows (Salary, Rent, Divs, Interest)</span>
+                  <strong style={{ color: THEME.sage }}>+<Money value={selectedMonthData.regularInflow} variant="exact" /></strong>
+                </div>
+                {selectedMonthData.eventInflow > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "var(--surface-0)", borderRadius: 6 }}>
+                    <span>One-Time Inflows (Maturities / Repayments)</span>
+                    <strong style={{ color: THEME.sage }}>+<Money value={selectedMonthData.eventInflow} variant="exact" /></strong>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "var(--surface-0)", borderRadius: 6 }}>
+                  <span>Recurring Outflows (EMIs, SIPs, Rent, Subs, Budget)</span>
+                  <strong style={{ color: THEME.rust }}>-<Money value={selectedMonthData.regularOutflow} variant="exact" /></strong>
+                </div>
+                {selectedMonthData.eventOutflow > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "var(--surface-0)", borderRadius: 6 }}>
+                    <span>One-Time Outflows (Insurance, Closures)</span>
+                    <strong style={{ color: THEME.rust }}>-<Money value={selectedMonthData.eventOutflow} variant="exact" /></strong>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Specific Events in this month */}
+            {selectedMonthData.events.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: THEME.ink }}>
+                  One-Time Events Occurring in {selectedMonthData.label}
+                </div>
+                {selectedMonthData.events.map((ev: any, idx: number) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "8px 12px",
+                      background: "var(--surface-1)",
+                      borderRadius: 8,
+                      border: `1px solid ${THEME.line}`,
+                      fontSize: 12,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, color: THEME.ink }}>{ev.name}</div>
+                      <div style={{ fontSize: 10.5, color: THEME.muted }}>{fmtDate(ev.date)} • {ev.category}</div>
+                    </div>
+                    <strong style={{ color: ev.type === "inflow" ? THEME.sage : THEME.rust }}>
+                      {ev.type === "inflow" ? "+" : "-"}<Money value={ev.amount} variant="exact" />
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {/* Salary Sourcing & Breakdown Modal */}
       <SalarySourcingModal

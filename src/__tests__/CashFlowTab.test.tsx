@@ -3,7 +3,6 @@ import React from "react";
 import { renderToString } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 import { CashFlowTab } from "../components/tabs/CashFlowTab";
-
 import { PrivacyProvider } from "../context/PrivacyContext";
 
 // Simple mock for recharts ResponsiveContainer
@@ -47,7 +46,7 @@ describe("CashFlowTab with Salary Slip Tracker Inflows", () => {
     termInsurance: [],
     investmentPlans: [],
     budgets: [],
-    bankAccounts: [],
+    bankAccounts: [{ id: "b1", bankName: "HDFC Bank", balance: 500000 }],
     financialEvents: [],
     settings: {},
   };
@@ -126,5 +125,33 @@ describe("CashFlowTab with Salary Slip Tracker Inflows", () => {
     expect(html).toContain("14,400");
     expect(html).toContain("1,61,210");
     expect(html).toContain("Switch to Salary Slips");
+  });
+
+  it("should render executive liquidity metrics, month-by-month matrix, and sandbox controls", () => {
+    const html = renderToString(
+      <PrivacyProvider>
+        <CashFlowTab state={mockState} metrics={{}} />
+      </PrivacyProvider>
+    );
+
+    // Verify executive metrics
+    expect(html).toContain("Current Liquid Cash");
+    expect(html).toContain("5,00,000");
+    expect(html).toContain("Ending Bank Cash");
+    expect(html).toContain("Runway Buffer");
+
+    // Verify multi-horizon selector & sandbox button
+    expect(html).toContain("What-If Sandbox");
+    expect(html).toContain("1 Mo");
+    expect(html).toContain("6 Mos");
+    expect(html).toContain("1 Year");
+
+    // Verify Month-by-Month Cash Flow Matrix
+    expect(html).toContain("Month-by-Month Cash Flow Matrix");
+
+    // Verify Chart View Mode buttons
+    expect(html).toContain("Flow &amp; Cumulative");
+    expect(html).toContain("Bank Balance Curve");
+    expect(html).toContain("Net Delta");
   });
 });
