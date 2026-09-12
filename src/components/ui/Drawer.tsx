@@ -61,8 +61,24 @@ export const Drawer: React.FC<DrawerProps> = ({ title, onClose, children, footer
     };
   }, []);
 
+  // Only close on a genuine click on the backdrop itself: both mousedown and
+  // mouseup/click must start and end on the backdrop, preventing accidental close
+  // when dragging/selecting text inside the drawer.
+  const mouseDownOnBackdrop = React.useRef(false);
+
   const content = (
-    <div className="drawer-backdrop" onClick={onClose}>
+    <div
+      className="drawer-backdrop"
+      onMouseDown={(e) => {
+        mouseDownOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (mouseDownOnBackdrop.current && e.target === e.currentTarget) {
+          onClose();
+        }
+        mouseDownOnBackdrop.current = false;
+      }}
+    >
       <div
         ref={panelRef}
         className="drawer-panel"
@@ -70,7 +86,6 @@ export const Drawer: React.FC<DrawerProps> = ({ title, onClose, children, footer
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
           <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{title}</h2>

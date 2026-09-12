@@ -481,7 +481,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     onChange={(e) => setGoal({ ...goal, targetAmount: e.target.value })}
                   />
                 </Field>
-                <Field label="Target Target Date">
+                <Field label="Target Date">
                   <input
                     style={inputStyle}
                     type="date"

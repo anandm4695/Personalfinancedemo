@@ -1444,7 +1444,7 @@ export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state, 
   // ── INPUT ROW HELPERS ──
   const inpRow = (lbl: string, val: string, set: (v: string) => void, placeholder = "") => (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 4, fontWeight: 600 }}>
+      <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 4, fontWeight: 600, display: "block" }}>
         {lbl}
       </label>
       <input
