@@ -93,6 +93,28 @@ export const CommandKModal: React.FC<CommandKModalProps> = ({
         }
       });
     });
+
+    const extraTools = [
+      { id: "calculators", subTab: "gratuity-leave", label: "Gratuity & Leave Encashment Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "nps", label: "NPS Tier-1 Pension & Annuity Analyzer", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "emi", label: "EMI Loan Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "sip", label: "SIP Returns Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "step-sip", label: "Step-Up SIP Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "swp", label: "SWP Retirement Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "fire", label: "Retirement Shortfall Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "fdrd", label: "FD & RD Maturity Calculator", group: "Financial Calculators", icon: null },
+      { id: "calculators", subTab: "scenario-sandbox", label: "Scenario Sandbox & Stress Tester", group: "Financial Calculators", icon: null },
+      { id: "taxtools", subTab: "gst-tds", label: "GST Invoice & Tax Split Reckoner", group: "Tax & Compliance", icon: null },
+      { id: "taxtools", subTab: "gst-tds", label: "Income Tax TDS Rate Reckoner", group: "Tax & Compliance", icon: null },
+      { id: "taxtools", subTab: "advance", label: "Advance Tax Calculator (Q1/Q2/Q3/Q4)", group: "Tax & Compliance", icon: null },
+      { id: "taxtools", subTab: "26as", label: "Form 26AS Tax Credit Reconciliation", group: "Tax & Compliance", icon: null },
+      { id: "taxtools", subTab: "hra", label: "HRA Rent Receipts Generator", group: "Tax & Compliance", icon: null },
+    ];
+
+    extraTools.forEach((tool) => {
+      items.push(tool);
+    });
+
     return items;
   }, []);
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   TrendingUp,
   Clock,
@@ -26,6 +26,9 @@ import {
   Plane,
   Rocket,
   Home,
+  Landmark,
+  FileText,
+  Award,
 } from "lucide-react";
 import {
   AreaChart,
@@ -57,9 +60,10 @@ import { useMasterData, calculateAge } from "../../utils/masterData";
 interface CalculatorsTabProps {
   metrics: any;
   state: any;
+  subTab?: string;
 }
 
-export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state }) => {
+export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state, subTab }) => {
   const { privacyMode } = usePrivacy();
   const masterData = useMasterData();
   const familyProfiles = masterData?.familyProfiles || state?.masterData?.familyProfiles || [];
@@ -81,7 +85,15 @@ export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state }
     | "scenario-sandbox"
     | "indexation"
     | "retirement-income"
-  >("emi");
+    | "gratuity-leave"
+    | "nps"
+  >((subTab as any) || "emi");
+
+  useEffect(() => {
+    if (subTab) {
+      setCalcTab(subTab as any);
+    }
+  }, [subTab]);
   const [monteVolatility, setMonteVolatility] = useState("10");
 
   // ── Scenario Sandbox State ──
@@ -1279,6 +1291,156 @@ export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state }
     };
   }, [metrics, state, eqHaircut, fiHaircut, burnMultiplier, oneTimeOutflow]);
 
+  // ── 15. GRATUITY & LEAVE ENCASHMENT CALCULATOR STATE & LOGIC ──
+  const [gratBasic, setGratBasic] = useState("80000");
+  const [gratTenure, setGratTenure] = useState("7");
+  const [gratMonths, setGratMonths] = useState("4");
+  const [gratCovered, setGratCovered] = useState(true);
+  const [gratGovt, setGratGovt] = useState(false);
+
+  // Leave Encashment state
+  const [leaveBasic, setLeaveBasic] = useState("80000");
+  const [leaveBalanceDays, setLeaveBalanceDays] = useState("90");
+  const [leaveGovt, setLeaveGovt] = useState(false);
+
+  const gratuityResult = useMemo(() => {
+    const basic = Math.max(0, Number(gratBasic) || 0);
+    const y = Math.max(0, Number(gratTenure) || 0);
+    const m = Math.max(0, Math.min(11, Number(gratMonths) || 0));
+
+    // For Gratuity Act covered: fraction > 6 months counts as 1 full year
+    const effectiveYearsCovered = m > 6 ? y + 1 : y;
+    const effectiveYearsNonCovered = y; // only completed full years
+
+    const rawCovered = (15 * basic * effectiveYearsCovered) / 26;
+    const rawNonCovered = (15 * basic * effectiveYearsNonCovered) / 30;
+
+    const actualGratuity = gratCovered ? rawCovered : rawNonCovered;
+
+    // Section 10(10) Tax Exemption Limit:
+    // Govt employees: 100% exempt
+    // Non-govt employees: capped at ₹20,00,000
+    const maxExempt = gratGovt ? actualGratuity : 2000000;
+    const exemptAmount = Math.min(actualGratuity, maxExempt);
+    const taxableAmount = Math.max(0, actualGratuity - exemptAmount);
+
+    return {
+      actualGratuity,
+      exemptAmount,
+      taxableAmount,
+      effectiveYears: gratCovered ? effectiveYearsCovered : effectiveYearsNonCovered,
+      isExempt: taxableAmount === 0,
+    };
+  }, [gratBasic, gratTenure, gratMonths, gratCovered, gratGovt]);
+
+  const leaveEncashmentResult = useMemo(() => {
+    const basic = Math.max(0, Number(leaveBasic) || 0);
+    const days = Math.max(0, Number(leaveBalanceDays) || 0);
+
+    // Daily rate based on 30-day month
+    const dailyRate = basic / 30;
+    const grossAmount = dailyRate * days;
+
+    // Section 10(10AA) Statutory Exemption Limit (raised to ₹25 Lakhs for non-govt employees)
+    const maxExemptionCap = leaveGovt ? grossAmount : 2500000;
+    const exemptAmount = Math.min(grossAmount, maxExemptionCap);
+    const taxableAmount = Math.max(0, grossAmount - exemptAmount);
+
+    return {
+      grossAmount,
+      exemptAmount,
+      taxableAmount,
+      isExempt: taxableAmount === 0,
+    };
+  }, [leaveBasic, leaveBalanceDays, leaveGovt]);
+
+  // ── 16. NPS RETIREMENT & ANNUITY ANALYZER STATE & LOGIC ──
+  const [npsAge, setNpsAge] = useState(defaultAgeFromDOB);
+  const [npsRetireAge, setNpsRetireAge] = useState("60");
+  const [npsInitialCorpus, setNpsInitialCorpus] = useState("200000");
+  const [npsMonthly, setNpsMonthly] = useState("10000");
+  const [npsReturnRate, setNpsReturnRate] = useState("10");
+  const [npsAnnuityRatio, setNpsAnnuityRatio] = useState("40");
+  const [npsAnnuityRate, setNpsAnnuityRate] = useState("6.5");
+
+  const npsResult = useMemo(() => {
+    const age = Math.max(18, Math.min(70, Number(npsAge) || 30));
+    const retAge = Math.max(age + 1, Math.min(75, Number(npsRetireAge) || 60));
+    const initial = Math.max(0, Number(npsInitialCorpus) || 0);
+    const monthly = Math.max(0, Number(npsMonthly) || 0);
+    const rAnnual = Math.max(0, Number(npsReturnRate) || 0) / 100;
+    const annuityPct = Math.max(40, Math.min(100, Number(npsAnnuityRatio) || 40));
+    const annuityYield = Math.max(0, Number(npsAnnuityRate) || 0) / 100;
+
+    const totalYears = retAge - age;
+    const totalMonths = totalYears * 12;
+    const rMonthly = rAnnual / 12;
+
+    const fvInitial = initial * Math.pow(1 + rMonthly, totalMonths);
+    let fvMonthly = 0;
+    if (rMonthly > 0) {
+      fvMonthly = monthly * ((Math.pow(1 + rMonthly, totalMonths) - 1) / rMonthly) * (1 + rMonthly);
+    } else {
+      fvMonthly = monthly * totalMonths;
+    }
+
+    const totalCorpus = fvInitial + fvMonthly;
+    const totalInvested = initial + monthly * totalMonths;
+    const totalGains = Math.max(0, totalCorpus - totalInvested);
+
+    const annuityCorpus = (totalCorpus * annuityPct) / 100;
+    const lumpSum = totalCorpus - annuityCorpus; // Tax-free under Section 10(12A)
+
+    const monthlyPension = (annuityCorpus * annuityYield) / 12;
+
+    // Timeline trajectory chart points
+    const trajectoryData = [];
+    for (let yr = 0; yr <= totalYears; yr++) {
+      const yearAge = age + yr;
+      if (yr === 0) {
+        trajectoryData.push({
+          age: yearAge,
+          invested: Math.round(initial),
+          corpus: Math.round(initial),
+          gains: 0,
+        });
+      } else {
+        const mCount = yr * 12;
+        const curFvInit = initial * Math.pow(1 + rMonthly, mCount);
+        const curFvMon =
+          rMonthly > 0
+            ? monthly * ((Math.pow(1 + rMonthly, mCount) - 1) / rMonthly) * (1 + rMonthly)
+            : monthly * mCount;
+        const cCorpus = curFvInit + curFvMon;
+        const cInvest = initial + monthly * mCount;
+        trajectoryData.push({
+          age: yearAge,
+          invested: Math.round(cInvest),
+          corpus: Math.round(cCorpus),
+          gains: Math.round(Math.max(0, cCorpus - cInvest)),
+        });
+      }
+    }
+
+    const pieData = [
+      { name: "Tax-Free Lump Sum", value: Math.round(lumpSum), color: THEME.accent },
+      { name: "Annuity Reinvested", value: Math.round(annuityCorpus), color: THEME.gold },
+    ];
+
+    return {
+      totalYears,
+      totalMonths,
+      totalInvested,
+      totalCorpus,
+      totalGains,
+      lumpSum,
+      annuityCorpus,
+      monthlyPension,
+      trajectoryData,
+      pieData,
+    };
+  }, [npsAge, npsRetireAge, npsInitialCorpus, npsMonthly, npsReturnRate, npsAnnuityRatio, npsAnnuityRate]);
+
   // ── INPUT ROW HELPERS ──
   const inpRow = (lbl: string, val: string, set: (v: string) => void, placeholder = "") => (
     <div style={{ marginBottom: 14 }}>
@@ -1465,6 +1627,8 @@ export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state }
           { id: "scenario-sandbox", label: "Scenario Sandbox", icon: GitBranch },
           { id: "indexation", label: "Indexation", icon: Coins },
           { id: "retirement-income", label: "Retirement Income", icon: Briefcase },
+          { id: "gratuity-leave", label: "Gratuity & Leave", icon: Award },
+          { id: "nps", label: "NPS Pension Analyzer", icon: Landmark },
         ].map((t) => {
           const active = calcTab === t.id;
           const Icon = t.icon;
@@ -5971,6 +6135,280 @@ export const CalculatorsTab: React.FC<CalculatorsTabProps> = ({ metrics, state }
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </Card>
+            </div>
+          </>
+        )}
+
+        {/* ── 15. GRATUITY & LEAVE ENCASHMENT CALCULATOR ── */}
+        {calcTab === "gratuity-leave" && (
+          <>
+            <div className="bento-col-6">
+              <Card style={{ padding: 24, height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                  <Award size={18} color={THEME.accent} />
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>Gratuity Calculator (Sec 10(10))</div>
+                </div>
+
+                <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 16, lineHeight: 1.5 }}>
+                  Calculated per <strong>Payment of Gratuity Act, 1972</strong>. Applies to employees with 5+ years of continuous service.
+                </div>
+
+                {inpRow("Last Drawn Basic + DA (₹/month)", gratBasic, setGratBasic)}
+
+                <div className="form-grid-2">
+                  {inpRow("Completed Years", gratTenure, setGratTenure)}
+                  {inpRow("Additional Months", gratMonths, setGratMonths)}
+                </div>
+
+                <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                    <input
+                      type="checkbox"
+                      checked={gratCovered}
+                      onChange={(e) => setGratCovered(e.target.checked)}
+                      style={{ accentColor: THEME.accent }}
+                    />
+                    <span>Covered under Gratuity Act (15/26 formula)</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                    <input
+                      type="checkbox"
+                      checked={gratGovt}
+                      onChange={(e) => setGratGovt(e.target.checked)}
+                      style={{ accentColor: THEME.accent }}
+                    />
+                    <span>Central/State Government Employee (100% Tax-Exempt)</span>
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    padding: 16,
+                    background: `color-mix(in srgb, ${THEME.muted} 4%, transparent)`,
+                    borderRadius: 12,
+                    border: `1px solid ${THEME.line}`,
+                    marginTop: 16,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                    <span style={{ color: THEME.muted }}>Effective Tenure Counted</span>
+                    <span style={{ fontWeight: 700, color: THEME.ink }}>{gratuityResult.effectiveYears} Years</span>
+                  </div>
+                  {resultRow("Total Gratuity Payable", gratuityResult.actualGratuity, true, THEME.accent)}
+                  {resultRow("Tax-Exempt Amount (Sec 10(10))", gratuityResult.exemptAmount, false, THEME.sage)}
+                  {gratuityResult.taxableAmount > 0 &&
+                    resultRow("Taxable Gratuity Portion", gratuityResult.taxableAmount, false, THEME.rust)}
+
+                  <div style={{ marginTop: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                    <Badge variant={gratuityResult.isExempt ? "sage" : "gold"}>
+                      {gratuityResult.isExempt ? "100% Tax-Free (Within ₹20L Limit)" : "Exceeds ₹20L Cap — Taxable at Slab"}
+                    </Badge>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            <div className="bento-col-6">
+              <Card style={{ padding: 24, height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                  <FileText size={18} color={THEME.accent} />
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>Leave Encashment (Sec 10(10AA))</div>
+                </div>
+
+                <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 16, lineHeight: 1.5 }}>
+                  Statutory exemption limit for non-government employees is enhanced to <strong>₹25,00,000</strong> under Finance Act provisions.
+                </div>
+
+                {inpRow("Average Monthly Salary (Basic + DA)", leaveBasic, setLeaveBasic)}
+                {inpRow("Earned Leave Balance (Days)", leaveBalanceDays, setLeaveBalanceDays)}
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                    <input
+                      type="checkbox"
+                      checked={leaveGovt}
+                      onChange={(e) => setLeaveGovt(e.target.checked)}
+                      style={{ accentColor: THEME.accent }}
+                    />
+                    <span>Government Employee (Fully Tax-Exempt u/s 10(10AA)(i))</span>
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    padding: 16,
+                    background: `color-mix(in srgb, ${THEME.muted} 4%, transparent)`,
+                    borderRadius: 12,
+                    border: `1px solid ${THEME.line}`,
+                    marginTop: 16,
+                  }}
+                >
+                  {resultRow("Gross Leave Encashment", leaveEncashmentResult.grossAmount, true, THEME.accent)}
+                  {resultRow("Tax-Exempt Portion (Max ₹25L)", leaveEncashmentResult.exemptAmount, false, THEME.sage)}
+                  {leaveEncashmentResult.taxableAmount > 0 &&
+                    resultRow("Taxable Portion", leaveEncashmentResult.taxableAmount, false, THEME.rust)}
+
+                  <div style={{ marginTop: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                    <Badge variant={leaveEncashmentResult.isExempt ? "sage" : "gold"}>
+                      {leaveEncashmentResult.isExempt ? "Fully Exempt (Within ₹25L Limit)" : "Exceeds ₹25L Limit — Subject to Tax"}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 20, padding: 12, borderRadius: 8, background: "color-mix(in srgb, var(--surface-1) 80%, transparent)", border: `1px solid ${THEME.line}`, fontSize: 11, color: THEME.muted, lineHeight: 1.4 }}>
+                  💡 <em>Note:</em> Leave encashment received during service is fully taxable. The exemption applies specifically at retirement, superannuation, or resignation.
+                </div>
+              </Card>
+            </div>
+          </>
+        )}
+
+        {/* ── 16. NPS RETIREMENT & ANNUITY ANALYZER ── */}
+        {calcTab === "nps" && (
+          <>
+            <div className="bento-col-4">
+              <Card style={{ padding: 24, height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                  <Landmark size={18} color={THEME.accent} />
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>NPS Tier-1 Parameters</div>
+                </div>
+
+                <div className="form-grid-2">
+                  {inpRow("Current Age", npsAge, setNpsAge)}
+                  {inpRow("Retirement Age", npsRetireAge, setNpsRetireAge)}
+                </div>
+
+                {inpRow("Existing NPS Balance (₹)", npsInitialCorpus, setNpsInitialCorpus)}
+                {inpRow("Monthly Contribution (₹)", npsMonthly, setNpsMonthly)}
+
+                {sliderRow("Expected ROI (% p.a.)", npsReturnRate, setNpsReturnRate, 6, 16, 0.5, "%")}
+                {sliderRow("Annuity Allocation (Min 40%)", npsAnnuityRatio, setNpsAnnuityRatio, 40, 100, 5, "%")}
+                {sliderRow("Expected Annuity Yield", npsAnnuityRate, setNpsAnnuityRate, 4, 10, 0.25, "%")}
+              </Card>
+            </div>
+
+            <div className="bento-col-8">
+              <Card style={{ padding: 24, height: "100%" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: THEME.ink }}>
+                    NPS Corpus & Pension Projection at Age {npsRetireAge}
+                  </div>
+                  <Badge variant="cyan">
+                    Tenure: {npsResult.totalYears} Years ({npsResult.totalMonths} Months)
+                  </Badge>
+                </div>
+
+                <div className="bento-grid" style={{ gap: 16, marginBottom: 20 }}>
+                  <div className="bento-col-4">
+                    <StatCard
+                      label="Total NPS Corpus"
+                      value={fmtINRFull(Math.round(npsResult.totalCorpus))}
+                      sub={`Invested: ${fmtINRFull(Math.round(npsResult.totalInvested))}`}
+                      icon={<Coins size={16} />}
+                      color={THEME.accent}
+                    />
+                  </div>
+                  <div className="bento-col-4">
+                    <StatCard
+                      label="Tax-Free Lump Sum"
+                      value={fmtINRFull(Math.round(npsResult.lumpSum))}
+                      sub={`${100 - Number(npsAnnuityRatio)}% of Corpus (Sec 10(12A))`}
+                      icon={<Wallet size={16} />}
+                      color={THEME.sage}
+                    />
+                  </div>
+                  <div className="bento-col-4">
+                    <StatCard
+                      label="Estimated Monthly Pension"
+                      value={fmtINRFull(Math.round(npsResult.monthlyPension))}
+                      sub={`From ₹${fmtINR(Math.round(npsResult.annuityCorpus))} Annuity`}
+                      icon={<Landmark size={16} />}
+                      color={THEME.gold}
+                    />
+                  </div>
+                </div>
+
+                <div className="bento-grid" style={{ gap: 20 }}>
+                  <div className="bento-col-7" style={{ minHeight: 240 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: THEME.muted, marginBottom: 12 }}>
+                      Wealth Accumulation Trajectory (Age {npsAge} → {npsRetireAge})
+                    </div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <AreaChart data={npsResult.trajectoryData}>
+                        <defs>
+                          <linearGradient id="npsCorpusGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={THEME.accent} stopOpacity={0.4} />
+                            <stop offset="95%" stopColor={THEME.accent} stopOpacity={0.0} />
+                          </linearGradient>
+                          <linearGradient id="npsInvestGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={THEME.muted} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={THEME.muted} stopOpacity={0.0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={THEME.line} vertical={false} />
+                        <XAxis dataKey="age" stroke={THEME.muted} tick={{ fontSize: 11 }} />
+                        <YAxis stroke={THEME.muted} tick={{ fontSize: 11 }} tickFormatter={(v) => fmtINR(v)} />
+                        <Tooltip
+                          formatter={(v: any) => [fmtINRFull(Number(v)), ""]}
+                          contentStyle={{
+                            background: "var(--t-card-bg)",
+                            border: `1px solid ${THEME.line}`,
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="corpus"
+                          name="Total Corpus"
+                          stroke={THEME.accent}
+                          strokeWidth={2}
+                          fill="url(#npsCorpusGrad)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="invested"
+                          name="Total Principal"
+                          stroke={THEME.muted}
+                          strokeWidth={1.5}
+                          fill="url(#npsInvestGrad)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="bento-col-5" style={{ minHeight: 240, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: THEME.muted, marginBottom: 8, alignSelf: "flex-start" }}>
+                      Maturity Corpus Split
+                    </div>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie
+                          data={npsResult.pieData}
+                          innerRadius={45}
+                          outerRadius={70}
+                          paddingAngle={4}
+                          dataKey="value"
+                        >
+                          {npsResult.pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(v: any) => [fmtINRFull(Number(v)), ""]}
+                          contentStyle={{
+                            background: "var(--t-card-bg)",
+                            border: `1px solid ${THEME.line}`,
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </Card>
             </div>

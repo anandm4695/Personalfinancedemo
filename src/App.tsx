@@ -4178,7 +4178,9 @@ function FinanceDashboard() {
                   showToast={showToast}
                 />
               )}
-              {tab === "calculators" && <CalculatorsTab metrics={metrics} state={filteredState} />}
+              {tab === "calculators" && (
+                <CalculatorsTab metrics={metrics} state={filteredState} subTab={subTab} />
+              )}
               {tab === "cashflow" && (
                 <CashFlowTab
                   state={filteredState}
@@ -4202,6 +4204,7 @@ function FinanceDashboard() {
                 <TaxToolsTab
                   state={filteredState}
                   metrics={metrics}
+                  subTab={subTab}
                   addItem={addItem}
                   removeItem={removeItem}
                   updateItem={updateItem}

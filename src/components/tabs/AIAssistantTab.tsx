@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Lightbulb,
   ChevronRight,
+  Award,
 } from "lucide-react";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { THEME } from "../../utils/constants";
@@ -369,6 +370,11 @@ const ADVISOR_PROMPTS: Record<string, string[]> = {
     "Should I switch to old or new tax regime?",
     "Calculate my estimated advance tax for this quarter",
   ],
+  Retirement: [
+    "Estimate my Gratuity and Leave Encashment tax exemption upon retirement",
+    "What will my NPS corpus and monthly pension look like at age 60?",
+    "Compare EPF, VPF, and PPF for tax-free retirement compounding",
+  ],
   Goals: [
     "Am I on track for all my financial goals?",
     "What SIP amount do I need to retire by 55?",
@@ -384,6 +390,7 @@ const ADVISOR_PROMPTS: Record<string, string[]> = {
 const PROMPT_CATEGORY_ICONS: Record<string, any> = {
   Portfolio: PieChart,
   Tax: Wallet,
+  Retirement: Award,
   Goals: Target,
   Risk: Shield,
 };

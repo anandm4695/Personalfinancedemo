@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Calculator,
   Calendar,
@@ -9,6 +9,8 @@ import {
   Printer,
   Download,
   Info,
+  Receipt,
+  Percent,
 } from "lucide-react";
 import { THEME } from "../../utils/constants";
 import { getCurrentFY } from "../../utils/appConstants";
@@ -1496,11 +1498,488 @@ const Form26ASSection: React.FC<Form26ASSectionProps> = ({ state, addItem, remov
   );
 };
 
+// ── GST & TDS Quick Reckoner (B4) ───────────────────────────────────────────
+
+const TDS_SECTIONS = [
+  {
+    code: "194J(a)",
+    name: "Professional / Technical Fees",
+    rate: 10,
+    threshold: 30000,
+    desc: "Legal, medical, engineering, architectural, accountancy fees",
+  },
+  {
+    code: "194J(b)",
+    name: "Royalty / Technical Services / Call Center",
+    rate: 2,
+    threshold: 30000,
+    desc: "IT technical support, BPO/call center services",
+  },
+  {
+    code: "194C(1)",
+    name: "Contractor (Individual / HUF)",
+    rate: 1,
+    threshold: 30000,
+    annualThreshold: 100000,
+    desc: "Advertising, transport, catering, job work for individuals/HUFs",
+  },
+  {
+    code: "194C(2)",
+    name: "Contractor (Company / Firm)",
+    rate: 2,
+    threshold: 30000,
+    annualThreshold: 100000,
+    desc: "Contracts executed by companies, LLPs, or partnership firms",
+  },
+  {
+    code: "194I(a)",
+    name: "Rent on Land & Building",
+    rate: 10,
+    threshold: 240000,
+    desc: "Commercial or residential rent paid by business/corporate entities",
+  },
+  {
+    code: "194I(b)",
+    name: "Rent on Plant & Machinery",
+    rate: 2,
+    threshold: 240000,
+    desc: "Hiring charges for industrial machinery, equipment, servers",
+  },
+  {
+    code: "194H",
+    name: "Commission or Brokerage",
+    rate: 5,
+    threshold: 15000,
+    desc: "Real estate brokerage, business agent commission",
+  },
+  {
+    code: "194Q",
+    name: "Purchase of Goods (> ₹50L)",
+    rate: 0.1,
+    threshold: 5000000,
+    desc: "Buyer turnover > ₹10Cr in preceding FY; applicable on amount above ₹50L",
+  },
+  {
+    code: "194A",
+    name: "Interest on Bank FDs / Securities",
+    rate: 10,
+    threshold: 40000,
+    desc: "Bank interest (threshold ₹50,000 for senior citizens, ₹40,000 for others)",
+  },
+];
+
+const GstTdsSection: React.FC = () => {
+  // GST State
+  const [gstMode, setGstMode] = useState<"exclusive" | "inclusive">("exclusive");
+  const [gstAmount, setGstAmount] = useState("100000");
+  const [gstRate, setGstRate] = useState<number>(18);
+  const [supplyType, setSupplyType] = useState<"intra" | "inter">("intra");
+  const [govtTds, setGovtTds] = useState(false);
+
+  // TDS State
+  const [tdsSectionCode, setTdsSectionCode] = useState("194J(a)");
+  const [tdsInvoiceAmt, setTdsInvoiceAmt] = useState("100000");
+  const [hasPan, setHasPan] = useState(true);
+  const [isLDC, setIsLDC] = useState(false);
+  const [ldcRate, setLdcRate] = useState("3");
+
+  // GST Math
+  const gstResult = useMemo(() => {
+    const raw = Math.max(0, Number(gstAmount) || 0);
+    const r = gstRate / 100;
+
+    let baseAmount = 0;
+    let taxAmount = 0;
+    let totalInvoice = 0;
+
+    if (gstMode === "exclusive") {
+      baseAmount = raw;
+      taxAmount = raw * r;
+      totalInvoice = baseAmount + taxAmount;
+    } else {
+      totalInvoice = raw;
+      baseAmount = raw / (1 + r);
+      taxAmount = totalInvoice - baseAmount;
+    }
+
+    const cgst = supplyType === "intra" ? taxAmount / 2 : 0;
+    const sgst = supplyType === "intra" ? taxAmount / 2 : 0;
+    const igst = supplyType === "inter" ? taxAmount : 0;
+
+    // TDS under Section 51 of CGST Act (2% on taxable value for contracts > 2.5L)
+    const gstTdsAmt = govtTds && baseAmount >= 250000 ? baseAmount * 0.02 : 0;
+    const netReceivable = totalInvoice - gstTdsAmt;
+
+    return {
+      baseAmount,
+      taxAmount,
+      totalInvoice,
+      cgst,
+      sgst,
+      igst,
+      gstTdsAmt,
+      netReceivable,
+    };
+  }, [gstMode, gstAmount, gstRate, supplyType, govtTds]);
+
+  // TDS Math
+  const activeTdsSection = useMemo(() => {
+    return TDS_SECTIONS.find((s) => s.code === tdsSectionCode) || TDS_SECTIONS[0];
+  }, [tdsSectionCode]);
+
+  const tdsResult = useMemo(() => {
+    const gross = Math.max(0, Number(tdsInvoiceAmt) || 0);
+
+    let effectiveRate = activeTdsSection.rate;
+    if (!hasPan) {
+      effectiveRate = 20; // Section 206AA
+    } else if (isLDC) {
+      effectiveRate = Math.max(0, Number(ldcRate) || 0);
+    }
+
+    let taxableBase = gross;
+    if (activeTdsSection.code === "194Q") {
+      // 194Q applies only on portion exceeding ₹50L
+      taxableBase = Math.max(0, gross - 5000000);
+    }
+
+    const isExempt = hasPan && !isLDC && gross < activeTdsSection.threshold && activeTdsSection.code !== "194Q";
+    const tdsDeducted = isExempt ? 0 : (taxableBase * effectiveRate) / 100;
+    const netPayable = Math.max(0, gross - tdsDeducted);
+
+    return {
+      gross,
+      effectiveRate,
+      tdsDeducted,
+      netPayable,
+      isExempt,
+    };
+  }, [activeTdsSection, tdsInvoiceAmt, hasPan, isLDC, ldcRate]);
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="bento-grid" style={{ gap: 24 }}>
+        {/* GST CALCULATOR */}
+        <div className="bento-col-6">
+          <Card style={{ padding: 24, height: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <Receipt size={18} color={THEME.accent} />
+              <div style={{ fontSize: 16, fontWeight: 700 }}>GST Invoice & Tax Split</div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <button
+                type="button"
+                onClick={() => setGstMode("exclusive")}
+                className={`demat-portfolio-pill ${gstMode === "exclusive" ? "active" : ""}`}
+                style={{ flex: 1, justifyContent: "center", padding: "8px 12px", fontSize: 12 }}
+              >
+                Forward (Tax Exclusive)
+              </button>
+              <button
+                type="button"
+                onClick={() => setGstMode("inclusive")}
+                className={`demat-portfolio-pill ${gstMode === "inclusive" ? "active" : ""}`}
+                style={{ flex: 1, justifyContent: "center", padding: "8px 12px", fontSize: 12 }}
+              >
+                Reverse (MRP Inclusive)
+              </button>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 4, fontWeight: 600, display: "block" }}>
+                {gstMode === "exclusive" ? "Base Taxable Value (₹)" : "Gross Total Invoice / MRP (₹)"}
+              </label>
+              <input
+                className="form-input"
+                type="number"
+                inputMode="decimal"
+                value={gstAmount}
+                onChange={(e) => setGstAmount(e.target.value)}
+                placeholder="100000"
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 6, fontWeight: 600, display: "block" }}>
+                GST Rate
+              </label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[0, 5, 12, 18, 28].map((rate) => (
+                  <button
+                    key={rate}
+                    type="button"
+                    onClick={() => setGstRate(rate)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      border: `1px solid ${gstRate === rate ? THEME.accent : THEME.line}`,
+                      background: gstRate === rate ? THEME.accent : "var(--t-card-bg)",
+                      color: gstRate === rate ? "#ffffff" : THEME.ink,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {rate}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 6, fontWeight: 600, display: "block" }}>
+                Supply Nature
+              </label>
+              <div style={{ display: "flex", gap: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                  <input
+                    type="radio"
+                    name="supplyType"
+                    checked={supplyType === "intra"}
+                    onChange={() => setSupplyType("intra")}
+                    style={{ accentColor: THEME.accent }}
+                  />
+                  <span>Intra-State (CGST + SGST)</span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                  <input
+                    type="radio"
+                    name="supplyType"
+                    checked={supplyType === "inter"}
+                    onChange={() => setSupplyType("inter")}
+                    style={{ accentColor: THEME.accent }}
+                  />
+                  <span>Inter-State (IGST)</span>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", color: THEME.ink }}>
+                <input
+                  type="checkbox"
+                  checked={govtTds}
+                  onChange={(e) => setGovtTds(e.target.checked)}
+                  style={{ accentColor: THEME.accent }}
+                />
+                <span>Govt / PSU Supply Contract (2% TDS u/s 51 on &gt; ₹2.5L)</span>
+              </label>
+            </div>
+
+            {/* GST Output Card */}
+            <div
+              style={{
+                padding: 16,
+                background: `color-mix(in srgb, ${THEME.muted} 4%, transparent)`,
+                borderRadius: 12,
+                border: `1px solid ${THEME.line}`,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                <span style={{ color: THEME.muted }}>Base Taxable Value</span>
+                <span style={{ fontWeight: 700, color: THEME.ink }}>{fmtINRFull(Math.round(gstResult.baseAmount))}</span>
+              </div>
+              {supplyType === "intra" ? (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                    <span style={{ color: THEME.muted }}>CGST ({gstRate / 2}%)</span>
+                    <span style={{ fontWeight: 700, color: THEME.accent }}>{fmtINRFull(Math.round(gstResult.cgst))}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                    <span style={{ color: THEME.muted }}>SGST ({gstRate / 2}%)</span>
+                    <span style={{ fontWeight: 700, color: THEME.accent }}>{fmtINRFull(Math.round(gstResult.sgst))}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: THEME.muted }}>IGST ({gstRate}%)</span>
+                  <span style={{ fontWeight: 700, color: THEME.accent }}>{fmtINRFull(Math.round(gstResult.igst))}</span>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  paddingTop: 8,
+                  borderTop: `1px dashed ${THEME.line}`,
+                  marginBottom: 8,
+                  fontSize: 14,
+                }}
+              >
+                <span style={{ fontWeight: 700, color: THEME.ink }}>Gross Invoice Value</span>
+                <span style={{ fontWeight: 800, color: THEME.ink }}>{fmtINRFull(Math.round(gstResult.totalInvoice))}</span>
+              </div>
+
+              {gstResult.gstTdsAmt > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13, color: THEME.rust }}>
+                  <span>Less: GST TDS (2% u/s 51)</span>
+                  <span style={{ fontWeight: 700 }}>- {fmtINRFull(Math.round(gstResult.gstTdsAmt))}</span>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  paddingTop: 8,
+                  borderTop: `1px solid ${THEME.line}`,
+                  fontSize: 15,
+                }}
+              >
+                <span style={{ fontWeight: 800, color: THEME.sage }}>Net Receivable / Disbursable</span>
+                <span style={{ fontWeight: 800, color: THEME.sage }}>{fmtINRFull(Math.round(gstResult.netReceivable))}</span>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* TDS RECKONER */}
+        <div className="bento-col-6">
+          <Card style={{ padding: 24, height: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <Percent size={18} color={THEME.accent} />
+              <div style={{ fontSize: 16, fontWeight: 700 }}>Income Tax TDS Reckoner</div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 4, fontWeight: 600, display: "block" }}>
+                Select Applicable Section
+              </label>
+              <select
+                className="form-input"
+                value={tdsSectionCode}
+                onChange={(e) => setTdsSectionCode(e.target.value)}
+                style={{ padding: "9px 12px", fontSize: 13, fontWeight: 600 }}
+              >
+                {TDS_SECTIONS.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    Section {s.code} — {s.name} ({s.rate}%)
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>
+                {activeTdsSection.desc} • Exemption Threshold: {fmtINRFull(activeTdsSection.threshold)}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: THEME.muted, marginBottom: 4, fontWeight: 600, display: "block" }}>
+                Gross Bill / Payment Amount (₹)
+              </label>
+              <input
+                className="form-input"
+                type="number"
+                inputMode="decimal"
+                value={tdsInvoiceAmt}
+                onChange={(e) => setTdsInvoiceAmt(e.target.value)}
+                placeholder="100000"
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                <input
+                  type="checkbox"
+                  checked={hasPan}
+                  onChange={(e) => setHasPan(e.target.checked)}
+                  style={{ accentColor: THEME.accent }}
+                />
+                <span>Valid PAN Provided (If unchecked, 20% TDS applies u/s 206AA)</span>
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: THEME.ink }}>
+                <input
+                  type="checkbox"
+                  checked={isLDC}
+                  onChange={(e) => setIsLDC(e.target.checked)}
+                  style={{ accentColor: THEME.accent }}
+                />
+                <span>Lower / Nil Deduction Certificate u/s 197</span>
+              </label>
+
+              {isLDC && (
+                <div style={{ paddingLeft: 24 }}>
+                  <label style={{ fontSize: 11, color: THEME.muted, marginBottom: 2, display: "block" }}>
+                    Certified Lower Rate (%)
+                  </label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    style={{ width: 120, padding: "6px 10px", fontSize: 12 }}
+                    value={ldcRate}
+                    onChange={(e) => setLdcRate(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* TDS Output Card */}
+            <div
+              style={{
+                padding: 16,
+                background: `color-mix(in srgb, ${THEME.muted} 4%, transparent)`,
+                borderRadius: 12,
+                border: `1px solid ${THEME.line}`,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                <span style={{ color: THEME.muted }}>Gross Bill Amount</span>
+                <span style={{ fontWeight: 700, color: THEME.ink }}>{fmtINRFull(Math.round(tdsResult.gross))}</span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                <span style={{ color: THEME.muted }}>Applicable TDS Rate</span>
+                <span style={{ fontWeight: 700, color: !hasPan ? THEME.rust : THEME.accent }}>
+                  {tdsResult.effectiveRate}% {!hasPan ? "(Sec 206AA Higher Rate)" : ""}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                <span style={{ color: THEME.muted }}>TDS Deductible</span>
+                <span style={{ fontWeight: 700, color: THEME.rust }}>
+                  - {fmtINRFull(Math.round(tdsResult.tdsDeducted))}
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  paddingTop: 8,
+                  borderTop: `1px solid ${THEME.line}`,
+                  fontSize: 15,
+                }}
+              >
+                <span style={{ fontWeight: 800, color: THEME.sage }}>Net Payable to Vendor / Payee</span>
+                <span style={{ fontWeight: 800, color: THEME.sage }}>{fmtINRFull(Math.round(tdsResult.netPayable))}</span>
+              </div>
+
+              <div style={{ marginTop: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                {tdsResult.isExempt ? (
+                  <Badge variant="sage">Below Section Threshold ({fmtINRFull(activeTdsSection.threshold)}) — Zero TDS</Badge>
+                ) : (
+                  <Badge variant={!hasPan ? "rust" : "accent"}>
+                    {!hasPan ? "High Rate (No PAN) u/s 206AA" : `TDS u/s ${activeTdsSection.code} Applicable`}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Tab ─────────────────────────────────────────────────────────────────
 
 interface TaxToolsTabProps {
   state: any;
   metrics: any;
+  subTab?: string;
   addItem?: any;
   removeItem?: any;
   updateItem?: any;
@@ -1510,21 +1989,29 @@ interface TaxToolsTabProps {
 export const TaxToolsTab: React.FC<TaxToolsTabProps> = ({
   state,
   metrics,
+  subTab,
   addItem,
   removeItem,
   showToast,
 }) => {
-  const [activeSection, setActiveSection] = useState("advance");
+  const [activeSection, setActiveSection] = useState(subTab || "advance");
+
+  useEffect(() => {
+    if (subTab) {
+      setActiveSection(subTab);
+    }
+  }, [subTab]);
 
   const sections = [
     { key: "advance", label: "Advance Tax", icon: Calculator },
     { key: "26as", label: "26AS Reconciliation", icon: FileText },
     { key: "hra", label: "HRA Receipts", icon: Home },
+    { key: "gst-tds", label: "GST & TDS Reckoner", icon: Receipt },
   ];
 
   return (
     <div>
-      <SectionTitle sub="Advance tax calculator, 26AS reconciliation & HRA rent receipts">
+      <SectionTitle sub="Advance tax calculator, 26AS reconciliation, HRA rent receipts & GST/TDS reckoner">
         Tax Tools
       </SectionTitle>
 
@@ -1556,6 +2043,8 @@ export const TaxToolsTab: React.FC<TaxToolsTabProps> = ({
         />
       )}
       {activeSection === "hra" && <HraReceiptSection state={state} />}
+      {activeSection === "gst-tds" && <GstTdsSection />}
     </div>
   );
 };
+
