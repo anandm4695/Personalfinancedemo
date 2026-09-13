@@ -234,4 +234,79 @@ describe("SubscriptionsTab UI & State Integration", () => {
     expect(images[1].getAttribute("src")).toContain("customapp.io");
     expect(container.textContent).toContain("LN"); // Initials for Local Newspaper
   });
+
+  it("switches between Category Grid, Renewal Calendar, Full Ledger, and Analytics views", async () => {
+    const state = {
+      subscriptions: [
+        {
+          id: "sub-1",
+          name: "Netflix",
+          category: "Entertainment",
+          amount: 649,
+          cycle: "monthly",
+          renewalDate: "2026-09-02",
+          paymentMethod: "credit_card",
+          paused: false,
+        },
+        {
+          id: "sub-2",
+          name: "ChatGPT Plus",
+          category: "Productivity",
+          amount: 1999,
+          cycle: "monthly",
+          renewalDate: "2026-09-12",
+          paymentMethod: "upi_autopay",
+          paused: false,
+        },
+      ],
+    };
+
+    const container = await mount(
+      <PrivacyProvider>
+        <SubscriptionsTab
+          state={state}
+          addItem={vi.fn()}
+          removeItem={vi.fn()}
+          updateItem={vi.fn()}
+          metrics={{ monthIncome: 200000 }}
+        />
+      </PrivacyProvider>
+    );
+
+    // Default view: Category Grid
+    expect(container.textContent).toContain("Category Grid");
+    expect(container.textContent).toContain("Renewal Calendar");
+    expect(container.textContent).toContain("Full Ledger");
+    expect(container.textContent).toContain("Analytics & Matrix");
+
+    // Click Renewal Calendar
+    const calendarBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Renewal Calendar")
+    );
+    await act(async () => {
+      calendarBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("Netflix");
+    expect(container.textContent).toContain("ChatGPT Plus");
+
+    // Click Full Ledger
+    const ledgerBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Full Ledger")
+    );
+    await act(async () => {
+      ledgerBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.textContent).toContain("Billed Cost");
+
+    // Click Analytics & Matrix
+    const analyticsBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Analytics & Matrix")
+    );
+    await act(async () => {
+      analyticsBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("Monthly Spend by Category");
+    expect(container.textContent).toContain("Billing Cycle Breakdown & Burn Rate");
+  });
 });
