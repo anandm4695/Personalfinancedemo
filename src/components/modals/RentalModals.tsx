@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Users, User, AlertCircle, CheckCircle2, TrendingUp } from "lucide-react";
+import { Plus, Trash2, Users, User, AlertCircle, CheckCircle2, TrendingUp, Landmark } from "lucide-react";
 import { THEME } from "../../utils/constants";
 import { useMasterData, formatProfileOption } from "../../utils/masterData";
 import { today, fmtINRFull, getEffectiveRent } from "../../utils/finance";
@@ -17,15 +17,15 @@ const input: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-// Shared per-row accent palette for up to 5 tenants/landlords/escalation
-// tiers — one constant reused everywhere instead of the same 5-color array
-// being redefined at each usage site. THEME only has 4 semantic colors, so
-// a 5th fixed violet rounds this out for the "5th person" case.
+const getAccountLabel = (a: any): string => {
+  if (!a) return "";
+  const last4 = a.accountNumber ? ` ····${String(a.accountNumber).slice(-4)}` : "";
+  const type = a.type ? ` (${a.type})` : "";
+  return `${a.bankName || "Bank"}${type}${last4}`;
+};
+
 const SPLIT_COLORS = [THEME.accent, THEME.sage, THEME.gold, THEME.rust, "#A78BFA"];
 
-// Scoped styling for the native range slider used in the landlord split
-// card — replaces the unstyled default browser thumb/track with one that
-// picks up each row's accent color via the --slider-color custom property.
 const SLIDER_STYLE = `
   .rental-split-slider {
     -webkit-appearance: none;
@@ -67,9 +67,6 @@ const SLIDER_STYLE = `
   }
 `;
 
-/* ══════════════════════════════════════════════════════════════════
-   EscalationTiersSection — shared by both Rented Out & Rented In
-══════════════════════════════════════════════════════════════════ */
 function tierDateRange(agreementStart: string, tierIndex: number, tiers: any[]): string {
   if (!agreementStart) return "";
   const [y, m] = agreementStart.slice(0, 7).split("-").map(Number);
@@ -131,14 +128,6 @@ function EscalationTiersSection({
             alignItems: "center",
             gap: 5,
             transition: "all 0.15s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 12%, transparent)`;
-            e.currentTarget.style.borderColor = THEME.accent;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 6%, transparent)`;
-            e.currentTarget.style.borderColor = `color-mix(in srgb, ${THEME.accent} 33%, transparent)`;
           }}
         >
           <Plus size={12} /> Add Year
@@ -281,9 +270,6 @@ function EscalationTiersSection({
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   TenantSplitCard  — per-tenant row inside the modal
-══════════════════════════════════════════════════════════════════ */
 function TenantSplitCard({
   t,
   idx,
@@ -310,7 +296,6 @@ function TenantSplitCard({
         transition: "all 0.2s",
       }}
     >
-      {/* Header row */}
       <div
         style={{
           display: "flex",
@@ -357,7 +342,6 @@ function TenantSplitCard({
         )}
       </div>
 
-      {/* Fields */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <Field label="Tenant Name" style={{ marginBottom: 0 }}>
           <input
@@ -392,9 +376,9 @@ function TenantSplitCard({
 /* ══════════════════════════════════════════════════════════════════
    RentalPropertyModal  (Rented Out)
 ══════════════════════════════════════════════════════════════════ */
-export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
+export function RentalPropertyModal({ initial, onClose, onSave, saving, bankAccounts = [] }: any) {
   const { familyProfiles } = useMasterData();
-  // Initialise tenants from saved data or default single tenant
+
   const initTenants = (): any[] => {
     if (initial?.tenants?.length > 0) return initial.tenants;
     if (initial?.tenantName) {
@@ -421,6 +405,7 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
     municipalTax: initial?.municipalTax || "",
     propertyValue: initial?.propertyValue || "",
     dueDay: initial?.dueDay || 5,
+    defaultBankAccountId: initial?.defaultBankAccountId || "",
   });
 
   const [tenants, setTenants] = useState<any[]>(initTenants);
@@ -433,7 +418,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
 
   const isMulti = tenantCount > 1;
 
-  // Sync tenant count changes
   useEffect(() => {
     setTenants((prev) => {
       const next = Array.from({ length: tenantCount }, (_, i) => ({
@@ -455,13 +439,11 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
     setTenantCount(next.length);
   };
 
-  // Calculate total monthly rent as sum of all tenants
   const totalMonthlyRent = tenants.reduce((s, t) => s + (Number(t.monthlyRent) || 0), 0);
 
   const handleSave = () => {
     if (!f.propertyName) return;
 
-    // Legacy fields for single tenant compatibility
     const primaryTenant = tenants[0] || {};
     onSave({
       ...f,
@@ -528,6 +510,28 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
             <option value="ended">Ended</option>
           </select>
         </Field>
+
+        {/* Linked Bank Account */}
+        {bankAccounts.length > 0 && (
+          <Field label="Linked Bank Account (Auto-Credit Rent)" style={{ gridColumn: "1 / -1" }}>
+            <select
+              style={input}
+              value={f.defaultBankAccountId}
+              onChange={(e) => setF({ ...f, defaultBankAccountId: e.target.value })}
+            >
+              <option value="">None (Manual / Cash / Off-Ledger)</option>
+              {bankAccounts.map((b: any) => (
+                <option key={b.id} value={b.id}>
+                  {getAccountLabel(b)}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 10, color: THEME.muted, marginTop: 4 }}>
+              💡 Rent receipts logged for this property will auto-credit into this bank account without duplicate entry.
+            </div>
+          </Field>
+        )}
+
         <Field label="Monthly Due Day (1-31)">
           <input
             style={input}
@@ -550,10 +554,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
             onChange={(e) => setF({ ...f, securityDeposit: e.target.value })}
             placeholder="100000"
           />
-          <div style={{ fontSize: 10, color: THEME.muted, marginTop: 4, lineHeight: "1.4" }}>
-            For partial deposit installments, enter the total agreed amount here and log each
-            receipt transaction in the property card's ledger.
-          </div>
         </Field>
         <Field label="Deposit Received Date">
           <input
@@ -563,13 +563,13 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
             onChange={(e) => setF({ ...f, depositReceivedDate: e.target.value })}
           />
         </Field>
-        <Field label="Annual Municipal Tax paid by you (₹)" style={{ gridColumn: "1 / -1" }}>
+        <Field label="Annual Municipal Tax paid by you (₹)">
           <input
             style={input}
             type="number"
             value={f.municipalTax}
             onChange={(e) => setF({ ...f, municipalTax: e.target.value })}
-            placeholder="0 (deducted before 30% std deduction)"
+            placeholder="0"
           />
         </Field>
         <Field label="Estimated Property Value (₹)" style={{ gridColumn: "1 / -1" }}>
@@ -599,7 +599,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
         </Field>
       </div>
 
-      {/* ── Escalation Schedule ── */}
       <div style={{ height: 1, background: THEME.line, margin: "20px 0" }} />
       <EscalationTiersSection
         tiers={escalationTiers}
@@ -607,10 +606,9 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
         agreementStart={f.agreementStart}
       />
 
-      {/* ── Divider ── */}
       <div style={{ height: 1, background: THEME.line, margin: "20px 0" }} />
 
-      {/* ── Tenants Section ── */}
+      {/* Tenants Section */}
       <div style={{ marginBottom: 16 }}>
         <div
           style={{
@@ -632,7 +630,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
             </div>
           </div>
 
-          {/* Count buttons */}
           <div style={{ display: "flex", gap: 6 }}>
             {[1, 2, 3, 4, 5].map((n) => (
               <button
@@ -655,14 +652,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
                   cursor: "pointer",
                   transition: "all 0.18s",
                 }}
-                onMouseEnter={(e) => {
-                  if (tenantCount !== n)
-                    e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 18%, transparent)`;
-                }}
-                onMouseLeave={(e) => {
-                  if (tenantCount !== n)
-                    e.currentTarget.style.background = `color-mix(in srgb, ${THEME.muted} 10%, transparent)`;
-                }}
               >
                 {n}
               </button>
@@ -670,7 +659,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
           </div>
         </div>
 
-        {/* Visual total rent banner */}
         <div
           style={{
             padding: "12px 16px",
@@ -692,7 +680,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
           </div>
         </div>
 
-        {/* Tenant cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {tenants.map((t, i) => (
             <TenantSplitCard
@@ -706,7 +693,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
           ))}
         </div>
 
-        {/* Add tenant button (up to 5) */}
         {tenants.length < 5 && (
           <button
             onClick={() => setTenantCount((c) => c + 1)}
@@ -725,15 +711,6 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 10%, transparent)`;
-              e.currentTarget.style.borderColor = THEME.accent;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 4%, transparent)`;
-              e.currentTarget.style.borderColor = `color-mix(in srgb, ${THEME.accent} 33%, transparent)`;
             }}
           >
             <Plus size={14} /> Add Another Tenant
@@ -753,7 +730,7 @@ export function RentalPropertyModal({ initial, onClose, onSave, saving }: any) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   RentalReceiptModal
+   RentalReceiptModal (Unified for Receipts & Payments with Bank Auto-Sync)
 ══════════════════════════════════════════════════════════════════ */
 export function RentalReceiptModal({
   onClose,
@@ -763,17 +740,30 @@ export function RentalReceiptModal({
   amountLabel,
   saveLabel,
   saving,
+  bankAccounts = [],
+  defaultBankAccountId,
+  type = "receipt",
+  property,
 }: any) {
+  const isOut = type === "receipt" || !title?.toLowerCase().includes("payment");
   const now = new Date();
   const defaultMonth = now.toISOString().slice(0, 7);
+  const initialBankId =
+    initial?.bankAccountId !== undefined
+      ? initial.bankAccountId
+      : defaultBankAccountId || property?.defaultBankAccountId || (bankAccounts[0]?.id || "");
+
   const [f, setF] = useState({
     month: initial?.month || defaultMonth,
     amount: initial?.amount ? String(initial.amount) : "",
     date: initial?.date || today(),
     note: initial?.note || "",
+    bankAccountId: initialBankId || "",
+    postToBank: initialBankId !== "",
   });
+
   return (
-    <Modal title={title || "Log Rent Receipt"} onClose={onClose}>
+    <Modal title={title || (isOut ? "Log Rent Receipt" : "Log Rent Payment")} onClose={onClose}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Month (YYYY-MM)">
           <input
@@ -783,7 +773,7 @@ export function RentalReceiptModal({
             onChange={(e) => setF({ ...f, month: e.target.value })}
           />
         </Field>
-        <Field label={amountLabel || "Amount Received (₹)"}>
+        <Field label={amountLabel || (isOut ? "Amount Received (₹)" : "Amount Paid (₹)")}>
           <input
             style={input}
             type="number"
@@ -800,19 +790,77 @@ export function RentalReceiptModal({
             onChange={(e) => setF({ ...f, date: e.target.value })}
           />
         </Field>
-        <Field label="Note (optional)">
+        <Field label="Note / Mode (optional)">
           <input
             style={input}
             value={f.note}
             onChange={(e) => setF({ ...f, note: e.target.value })}
-            placeholder="e.g. cash / UPI"
+            placeholder="e.g. UPI / NetBanking"
           />
         </Field>
+
+        {/* Bank Account Auto-Sync */}
+        {bankAccounts.length > 0 && (
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: `color-mix(in srgb, ${isOut ? THEME.accent : THEME.rust} 5%, var(--surface-1))`,
+              border: `1px solid color-mix(in srgb, ${isOut ? THEME.accent : THEME.rust} 18%, transparent)`,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink, display: "flex", alignItems: "center", gap: 5 }}>
+                <Landmark size={14} color={isOut ? THEME.accent : THEME.rust} />
+                Bank Account Auto-Sync
+              </span>
+              <label style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={f.postToBank}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setF({
+                      ...f,
+                      postToBank: checked,
+                      bankAccountId: checked ? (f.bankAccountId || defaultBankAccountId || bankAccounts[0]?.id || "") : "",
+                    });
+                  }}
+                />
+                Post transaction to bank
+              </label>
+            </div>
+
+            {f.postToBank && (
+              <>
+                <select
+                  style={{ ...input, marginTop: 4 }}
+                  value={f.bankAccountId}
+                  onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}
+                >
+                  <option value="">Select Bank Account...</option>
+                  {bankAccounts.map((b: any) => (
+                    <option key={b.id} value={b.id}>
+                      {getAccountLabel(b)}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 6 }}>
+                  <span style={{ color: isOut ? THEME.sage : THEME.rust, fontWeight: 800 }}>
+                    {isOut ? "↓ Auto-Credit:" : "↑ Auto-Debit:"}
+                  </span>{" "}
+                  Automatically records ₹{Number(f.amount || 0).toLocaleString("en-IN")} in bank ledger under &quot;{isOut ? "Rental Income" : "Rent"}&quot;. No need to enter twice!
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <ModalActions
         onSave={() => f.month && Number(f.amount) > 0 && onSave(f)}
         onClose={onClose}
-        saveLabel={saveLabel || "Log Receipt"}
+        saveLabel={saveLabel || (isOut ? "Log Receipt" : "Log Payment")}
         disabled={saving}
         loading={saving}
       />
@@ -869,9 +917,6 @@ export function RentalDeductionModal({ onClose, onSave, initial, saving }: any) 
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   HELPER — build a blank landlord entry
-══════════════════════════════════════════════════════════════════ */
 function blankLandlord(idx: number) {
   return { name: "", phone: "", pan: "", splitPct: 0, label: `Landlord ${idx + 1}` };
 }
@@ -885,9 +930,6 @@ function buildEqualSplits(count: number) {
   }));
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   LandlordSplitCard  — per-landlord row inside the modal
-══════════════════════════════════════════════════════════════════ */
 function LandlordSplitCard({
   ll,
   idx,
@@ -917,7 +959,6 @@ function LandlordSplitCard({
         transition: "all 0.2s",
       }}
     >
-      {/* Header row */}
       <div
         style={{
           display: "flex",
@@ -946,7 +987,6 @@ function LandlordSplitCard({
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Monthly share badge */}
           <span
             style={{
               padding: "3px 10px",
@@ -981,7 +1021,6 @@ function LandlordSplitCard({
         </div>
       </div>
 
-      {/* Fields */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <Field label="Landlord Name" style={{ marginBottom: 0 }}>
           <input
@@ -1010,7 +1049,6 @@ function LandlordSplitCard({
         </Field>
       </div>
 
-      {/* Split % slider */}
       <div style={{ marginTop: 12 }}>
         <div
           style={{
@@ -1051,30 +1089,17 @@ function LandlordSplitCard({
             } as React.CSSProperties
           }
         />
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 10,
-            color: THEME.muted,
-            marginTop: 3,
-          }}
-        >
-          <span>1%</span>
-          <span>50%</span>
-          <span>99%</span>
-        </div>
       </div>
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   RentedInPropertyModal  — MAIN (with multi-landlord support)
+   RentedInPropertyModal  (Rented In)
 ══════════════════════════════════════════════════════════════════ */
-export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any) {
+export function RentedInPropertyModal({ initial, onClose, onSave, saving, bankAccounts = [] }: any) {
   const { familyProfiles } = useMasterData();
-  // Initialise landlords from saved data or default single landlord
+
   const initLandlords = (): any[] => {
     if (initial?.landlords?.length > 0) return initial.landlords;
     if (initial?.landlordName) {
@@ -1093,11 +1118,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
   const [f, setF] = useState({
     owner: initial?.owner || "self",
     propertyName: initial?.propertyName || "",
-    // Seed from the current effective rent (accounting for escalation tiers)
-    // rather than the raw stored monthlyRent field, which goes stale the
-    // moment tiers advance — otherwise reopening this modal to edit an
-    // escalated property showed a frozen, no-longer-accurate figure here
-    // even though every other tab reads the tier-aware getEffectiveRent().
     monthlyRent: initial ? getEffectiveRent(initial) || "" : "",
     securityDeposit: initial?.securityDeposit || "",
     depositPaidDate: initial?.depositPaidDate || "",
@@ -1105,6 +1125,7 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
     agreementEnd: initial?.agreementEnd || "",
     isActive: initial?.isActive !== false,
     dueDay: initial?.dueDay || 5,
+    defaultBankAccountId: initial?.defaultBankAccountId || "",
   });
 
   const [landlords, setLandlords] = useState<any[]>(initLandlords);
@@ -1120,10 +1141,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
   const pctValid = totalPct === 100;
   const isMulti = landlordCount > 1;
 
-  // When landlord count changes, only auto-rebuild equal splits while the
-  // splits are still untouched (fresh/default). Once the user has manually
-  // customised splitPct values, adding/removing landlords must be additive —
-  // it should never clobber a split they already dialled in.
   useEffect(() => {
     setLandlords((prev) => {
       if (landlordCount === prev.length) return prev;
@@ -1134,8 +1151,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
       );
 
       if (stillDefault) {
-        // No manual edits yet — safe to fully recompute equal splits,
-        // preserving any names/phone/pan already entered.
         const next = buildEqualSplits(landlordCount);
         return next.map((n, i) => ({
           ...n,
@@ -1146,17 +1161,11 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
       }
 
       if (landlordCount > prev.length) {
-        // Adding landlord(s) on top of a custom split: append blank entries
-        // without touching the existing, manually-edited splits.
         const added = landlordCount - prev.length;
         const newEntries = Array.from({ length: added }, (_, i) => blankLandlord(prev.length + i));
         return [...prev, ...newEntries];
       }
 
-      // Removing landlord(s) directly via the count buttons (the per-row
-      // delete button already rebalances splits and syncs landlordCount
-      // itself, so this only fires from the count-selector): truncate,
-      // preserving whatever custom splits remain.
       return prev.slice(0, landlordCount);
     });
   }, [landlordCount]);
@@ -1167,7 +1176,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
 
   const deleteLandlord = (idx: number) => {
     const next = landlords.filter((_, i) => i !== idx);
-    // Redistribute removed share equally
     const removed = landlords[idx].splitPct;
     const perOther = Math.floor(removed / next.length);
     const rem = removed - perOther * next.length;
@@ -1189,12 +1197,10 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
     if (!f.propertyName) return;
     if (isMulti && !pctValid) return;
 
-    // Backwards-compat: keep single landlord flat fields too
     const primaryLandlord = landlords[0] || {};
     onSave({
       ...f,
       landlords,
-      // Legacy flat fields (single-landlord compatible)
       landlordName: isMulti
         ? landlords.map((l) => l.name || "Unknown").join(", ")
         : primaryLandlord.name || "",
@@ -1214,7 +1220,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
       maxWidth={620}
     >
       <style>{SLIDER_STYLE}</style>
-      {/* ── Basic property fields ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Owner / Profile" style={{ gridColumn: "1 / -1" }}>
           <select
@@ -1254,11 +1259,29 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
             onChange={(e) => setF({ ...f, securityDeposit: e.target.value })}
             placeholder="100000"
           />
-          <div style={{ fontSize: 10, color: THEME.muted, marginTop: 4, lineHeight: "1.4" }}>
-            For partial deposit installments, enter the total agreed amount here and log each
-            payment transaction in the property card's ledger.
-          </div>
         </Field>
+
+        {/* Linked Bank Account */}
+        {bankAccounts.length > 0 && (
+          <Field label="Linked Bank Account (Auto-Debit Rent)" style={{ gridColumn: "1 / -1" }}>
+            <select
+              style={input}
+              value={f.defaultBankAccountId}
+              onChange={(e) => setF({ ...f, defaultBankAccountId: e.target.value })}
+            >
+              <option value="">None (Manual / Cash / Off-Ledger)</option>
+              {bankAccounts.map((b: any) => (
+                <option key={b.id} value={b.id}>
+                  {getAccountLabel(b)}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 10, color: THEME.muted, marginTop: 4 }}>
+              💡 Rent payments logged for this property will auto-debit from this bank account without duplicate entry.
+            </div>
+          </Field>
+        )}
+
         <Field label="Deposit Paid Date">
           <input
             style={input}
@@ -1309,7 +1332,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
         </Field>
       </div>
 
-      {/* ── Escalation Schedule ── */}
       <div style={{ height: 1, background: THEME.line, margin: "20px 0" }} />
       <EscalationTiersSection
         tiers={escalationTiers}
@@ -1317,10 +1339,9 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
         agreementStart={f.agreementStart}
       />
 
-      {/* ── Divider ── */}
       <div style={{ height: 1, background: THEME.line, margin: "20px 0" }} />
 
-      {/* ── Landlord count selector ── */}
+      {/* Landlord Section */}
       <div style={{ marginBottom: 16 }}>
         <div
           style={{
@@ -1344,7 +1365,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
             </div>
           </div>
 
-          {/* Count buttons */}
           <div style={{ display: "flex", gap: 6 }}>
             {[1, 2, 3, 4, 5].map((n) => (
               <button
@@ -1367,14 +1387,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
                   cursor: "pointer",
                   transition: "all 0.18s",
                 }}
-                onMouseEnter={(e) => {
-                  if (landlordCount !== n)
-                    e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 18%, transparent)`;
-                }}
-                onMouseLeave={(e) => {
-                  if (landlordCount !== n)
-                    e.currentTarget.style.background = `color-mix(in srgb, ${THEME.muted} 10%, transparent)`;
-                }}
               >
                 {n}
               </button>
@@ -1382,7 +1394,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
           </div>
         </div>
 
-        {/* Split validation bar (only shown for multi-landlord) */}
         {isMulti && (
           <div
             style={{
@@ -1424,13 +1435,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
                 fontSize: 11,
                 fontWeight: 700,
                 cursor: "pointer",
-                transition: "background 0.15s ease",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 16%, transparent)`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 8%, transparent)`;
               }}
             >
               Auto-equalise
@@ -1438,66 +1442,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
           </div>
         )}
 
-        {/* Visual split bar */}
-        {isMulti && monthlyRent > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <div
-              style={{ display: "flex", height: 8, borderRadius: 99, overflow: "hidden", gap: 2 }}
-            >
-              {landlords.map((ll, i) => {
-                const accentColor = SPLIT_COLORS[i % 5];
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      flex: Number(ll.splitPct) || 0,
-                      background: accentColor,
-                      transition: "flex 0.3s ease",
-                      borderRadius:
-                        i === 0
-                          ? "99px 0 0 99px"
-                          : i === landlords.length - 1
-                            ? "0 99px 99px 0"
-                            : 0,
-                    }}
-                  />
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 8 }}>
-              {landlords.map((ll, i) => {
-                const accentColor = SPLIT_COLORS[i % 5];
-                return (
-                  <span
-                    key={i}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: accentColor,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: accentColor,
-                        display: "inline-block",
-                      }}
-                    />
-                    {ll.name || `Landlord ${i + 1}`}:{" "}
-                    <Money value={(Number(ll.splitPct) / 100) * monthlyRent} variant="full" />/mo
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Landlord cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {landlords.map((ll, i) => (
             <LandlordSplitCard
@@ -1512,7 +1456,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
           ))}
         </div>
 
-        {/* Add landlord button (up to 5) */}
         {landlords.length < 5 && (
           <button
             onClick={() => setLandlordCount((c) => c + 1)}
@@ -1531,15 +1474,6 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 10%, transparent)`;
-              e.currentTarget.style.borderColor = THEME.accent;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = `color-mix(in srgb, ${THEME.accent} 4%, transparent)`;
-              e.currentTarget.style.borderColor = `color-mix(in srgb, ${THEME.accent} 33%, transparent)`;
             }}
           >
             <Plus size={14} /> Add Another Landlord
@@ -1559,9 +1493,8 @@ export function RentedInPropertyModal({ initial, onClose, onSave, saving }: any)
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   RentalDepositTxModal — for logging partial security deposits
-   (received or paid, YYYY-MM-DD + amount + description)
-   ══════════════════════════════════════════════════════════════════ */
+   RentalDepositTxModal (with Bank Auto-Sync)
+══════════════════════════════════════════════════════════════════ */
 export function RentalDepositTxModal({
   title,
   saveLabel,
@@ -1570,12 +1503,23 @@ export function RentalDepositTxModal({
   onSave,
   initial,
   saving,
+  bankAccounts = [],
+  defaultBankAccountId,
+  property,
 }: any) {
+  const initialBankId =
+    initial?.bankAccountId !== undefined
+      ? initial.bankAccountId
+      : defaultBankAccountId || property?.defaultBankAccountId || (bankAccounts[0]?.id || "");
+
   const [f, setF] = useState({
     amount: initial?.amount ? String(initial.amount) : "",
     date: initial?.date || today(),
     note: initial?.note || "",
+    bankAccountId: initialBankId || "",
+    postToBank: initialBankId !== "",
   });
+
   return (
     <Modal title={title || "Log Deposit Transaction"} onClose={onClose}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -1604,6 +1548,61 @@ export function RentalDepositTxModal({
             placeholder="e.g. Bank Transfer, Token money"
           />
         </Field>
+
+        {/* Bank Account Auto-Sync */}
+        {bankAccounts.length > 0 && (
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: `color-mix(in srgb, ${THEME.gold} 6%, var(--surface-1))`,
+              border: `1px solid color-mix(in srgb, ${THEME.gold} 20%, transparent)`,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink, display: "flex", alignItems: "center", gap: 5 }}>
+                <Landmark size={14} color={THEME.gold} />
+                Bank Account Transaction Sync
+              </span>
+              <label style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={f.postToBank}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setF({
+                      ...f,
+                      postToBank: checked,
+                      bankAccountId: checked ? (f.bankAccountId || defaultBankAccountId || bankAccounts[0]?.id || "") : "",
+                    });
+                  }}
+                />
+                Post transaction to bank
+              </label>
+            </div>
+
+            {f.postToBank && (
+              <>
+                <select
+                  style={{ ...input, marginTop: 4 }}
+                  value={f.bankAccountId}
+                  onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}
+                >
+                  <option value="">Select Bank Account...</option>
+                  {bankAccounts.map((b: any) => (
+                    <option key={b.id} value={b.id}>
+                      {getAccountLabel(b)}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 6 }}>
+                  💡 Automatically records ₹{Number(f.amount || 0).toLocaleString("en-IN")} in the selected bank account ledger.
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <ModalActions
         onSave={() => Number(f.amount) > 0 && onSave(f)}

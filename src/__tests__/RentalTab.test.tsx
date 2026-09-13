@@ -17,7 +17,7 @@ async function mount(ui: React.ReactElement) {
   return container;
 }
 
-describe("RentalTab — FY expected-rent calculation with mid-year escalation", () => {
+describe("RentalTab — Executive Redesign and Financial Calculations", () => {
   beforeEach(() => {
     // Fix "today" to 2026-07-15 — inside FY 2026-27 (Apr 2026 – Mar 2027),
     // 4 months (Apr, May, Jun, Jul) after the FY start.
@@ -38,8 +38,6 @@ describe("RentalTab — FY expected-rent calculation with mid-year escalation", 
           isActive: true,
           agreementStart: "2026-04-01",
           monthlyRent: 20000,
-          // Tier 0: ₹20,000/mo for the first 4 months (Apr–Jul, covers "today")
-          // Tier 1: ₹22,000/mo from month 5 onward (Aug–Mar within this FY)
           escalationTiers: [
             { amount: 20000, durationMonths: 4 },
             { amount: 22000, durationMonths: 100 },
@@ -62,10 +60,6 @@ describe("RentalTab — FY expected-rent calculation with mid-year escalation", 
       </PrivacyProvider>
     );
 
-    // Correct FY-expected total: 4 months @ ₹20,000 + 8 months @ ₹22,000
-    // = ₹80,000 + ₹1,76,000 = ₹2,56,000. The buggy calculation (today's
-    // effective rent × 12) would instead have shown "of ₹2,40,000 expected"
-    // in the per-property FY Collection progress bar.
     const expectedCorrect = 20000 * 4 + 22000 * 8;
     expect(expectedCorrect).toBe(256000);
 
@@ -123,11 +117,130 @@ describe("RentalTab — FY expected-rent calculation with mid-year escalation", 
       </PrivacyProvider>
     );
 
-    // Should NOT say "Y3 of 3" as active period for the expired property
     expect(container.textContent).not.toContain("Y3 of 3");
     expect(container.textContent).toContain("Tiers Expired");
     expect(container.textContent).toContain("Expired");
-    // Should NOT show "escalates in"
     expect(container.textContent).not.toContain("escalates in");
+  });
+
+  it("renders multi-tenant splits, deposit lifecycle balances, and quick action controls", async () => {
+    const state = {
+      rentalProperties: [
+        {
+          id: "p_multi",
+          propertyName: "Commercial Complex Floor 2",
+          isActive: true,
+          agreementStart: "2026-01-01",
+          agreementEnd: "2027-12-31",
+          monthlyRent: 60000,
+          tenants: [
+            { name: "Acme Corp", monthlyRent: 35000, phone: "9876543210" },
+            { name: "Zenith Studio", monthlyRent: 25000, phone: "9876543211" },
+          ],
+          securityDeposit: 200000,
+          depositTransactions: [
+            { id: "d1", amount: 100000, date: "2026-01-05", note: "Advance tranche 1" },
+            { id: "d2", amount: 100000, date: "2026-01-15", note: "Advance tranche 2" },
+          ],
+          depositDeductions: [{ id: "dec1", amount: 15000, reason: "Glass partition fix", date: "2026-05-10" }],
+          depositReturned: 25000,
+          receipts: [{ id: "r1", month: "2026-04", amount: 60000, date: "2026-04-05" }],
+          municipalTax: 10000,
+          propertyValue: 12000000,
+        },
+      ],
+      rentedProperties: [],
+    };
+
+    const container = await mount(
+      <PrivacyProvider>
+        <RentalTab state={state} addItem={() => {}} removeItem={() => {}} updateItem={() => {}} />
+      </PrivacyProvider>
+    );
+
+    // Multi-tenant names
+    expect(container.textContent).toContain("2 Tenants");
+    expect(container.textContent).toContain("Acme Corp");
+    expect(container.textContent).toContain("Zenith Studio");
+
+    // Net Deposit Held = 200,000 (actual transactions) - 15,000 (deductions) - 25,000 (returned) = 160,000
+    expect(container.textContent).toContain("₹1,60,000");
+
+    // Quick Action button to view ledger
+    expect(container.textContent).toContain("View Ledger (1)");
+
+    // Executive overview cashflow
+    expect(container.textContent).toContain("Monthly Rental Inflow");
+    expect(container.textContent).toContain("Rental Net Cashflow");
+  });
+
+  it("renders bank accounts and sync tags in ledger modal when bank is linked", async () => {
+    const state = {
+      bankAccounts: [
+        { id: "bank_hdfc", bankName: "HDFC Bank", accountNumber: "1234567890", type: "Savings" },
+      ],
+      rentalProperties: [
+        {
+          id: "p_synced",
+          propertyName: "Sunset Villa",
+          isActive: true,
+          agreementStart: "2026-04-01",
+          monthlyRent: 45000,
+          tenantName: "Sunita Verma",
+          receipts: [
+            {
+              id: "rec1",
+              month: "2026-04",
+              amount: 45000,
+              date: "2026-04-05",
+              bankAccountId: "bank_hdfc",
+              linkedTxnId: "txn_rent_1",
+            },
+          ],
+          depositTransactions: [
+            {
+              id: "dep1",
+              amount: 150000,
+              date: "2026-04-01",
+              bankAccountId: "bank_hdfc",
+              linkedTxnId: "txn_dep_1",
+            },
+          ],
+          depositDeductions: [],
+          depositReturned: 0,
+        },
+      ],
+      rentedProperties: [],
+      transactions: [
+        {
+          id: "txn_rent_1",
+          accountId: "bank_hdfc",
+          type: "credit",
+          amount: 45000,
+          category: "Rental Income",
+          linkedType: "rentalProperties",
+          linkedId: "p_synced",
+        },
+      ],
+    };
+
+    const container = await mount(
+      <PrivacyProvider>
+        <RentalTab state={state} addItem={() => {}} removeItem={() => {}} updateItem={() => {}} />
+      </PrivacyProvider>
+    );
+
+    // Click "View Ledger"
+    const ledgerBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("View Ledger")
+    );
+    expect(ledgerBtn).toBeDefined();
+
+    await act(async () => {
+      ledgerBtn?.click();
+    });
+
+    // In the opened ledger modal, HDFC Bank sync badge should be visible for the synced receipt
+    expect(document.body.textContent).toContain("HDFC Bank");
   });
 });
