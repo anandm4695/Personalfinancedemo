@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+/* eslint-disable */
+import React, { useState, useMemo, useRef } from "react";
 import { useAnimatedNumber } from "../../hooks/useAnimatedNumber";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import {
@@ -36,11 +37,35 @@ import {
   Download,
   ArrowUpRight,
   ArrowDownRight,
+  Search,
+  Filter,
+  PieChart as PieIcon,
+  Sparkles,
+  Layers,
+  Clock,
+  ExternalLink,
+  SlidersHorizontal,
+  Copy,
+  ChevronDown,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 import { THEME } from "../../utils/constants";
-import { fmtINRFull, today, getEffectiveRent, getLocalDateString } from "../../utils/finance";
+import { fmtINR, fmtINRFull, today, getEffectiveRent } from "../../utils/finance";
 import { useMasterData, formatProfileOption } from "../../utils/masterData";
 import { Modal, ModalActions } from "../ui/Modal";
+import { Drawer } from "../ui/Drawer";
 import { Field } from "../ui/Form";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -52,21 +77,29 @@ import { Badge } from "../ui/Badge";
 import { StatCard } from "../ui/StatCard";
 import { ConfirmDialog } from "../ui/Feedback";
 
+// Category Icons Dictionary
 const CATEGORY_ICONS: Record<string, any> = {
   Food: Utensils,
+  Dining: Utensils,
   Groceries: ShoppingBag,
   Transport: Car,
+  Fuel: Car,
   Rent: Home,
   Bills: Zap,
   Salary: Wallet,
   Investment: TrendingUp,
+  Investments: TrendingUp,
   EMI: CreditCard,
   Shopping: ShoppingBag,
   Medical: Stethoscope,
+  Healthcare: Stethoscope,
   Entertainment: Film,
   Tax: Landmark,
   Transfer: ArrowRightLeft,
   Utilities: Wrench,
+  Maintenance: Wrench,
+  Travel: Car,
+  Education: Wallet,
   Uncategorized: HelpCircle,
 };
 
@@ -87,6 +120,48 @@ const fmtDate = (dateStr: string) => {
   }
 };
 
+// 50/30/20 Classification rules
+const NEEDS_CATEGORIES = new Set([
+  "Rent",
+  "Groceries",
+  "Bills",
+  "Utilities",
+  "Medical",
+  "Healthcare",
+  "Transport",
+  "Fuel",
+  "EMI",
+  "Maintenance",
+  "Education",
+  "Tax",
+]);
+
+const WANTS_CATEGORIES = new Set([
+  "Food",
+  "Dining",
+  "Shopping",
+  "Entertainment",
+  "Travel",
+  "Personal Care",
+  "Subscriptions",
+  "Hobbies",
+  "Gifts",
+]);
+
+const SAVINGS_CATEGORIES = new Set([
+  "Investment",
+  "Investments",
+  "SIP",
+  "Savings",
+  "Mutual Funds",
+  "Stocks",
+  "FD",
+  "RD",
+  "Gold",
+  "PPF",
+  "NPS",
+]);
+
 export function BudgetTab({
   state,
   addItem,
@@ -99,9 +174,12 @@ export function BudgetTab({
   const { privacyMode } = usePrivacy();
   const { familyProfiles } = useMasterData();
   const [postingId, setPostingId] = useState<string | null>(null);
+
   const getOwnerName = (ownerId: string) =>
     familyProfiles.find((p: any) => p.id === ownerId)?.name || ownerId || "Self";
-  const [activeSubTab, setActiveSubTab] = useState("budget"); // "budget" or "recurring"
+
+  // Subtabs: "budget" | "recurring" | "analytics"
+  const [activeSubTab, setActiveSubTab] = useState<"budget" | "recurring" | "analytics">("budget");
   const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(
     null
   );
@@ -112,6 +190,19 @@ export function BudgetTab({
   const [editRecurring, setEditRecurring] = useState<any>(null);
   const [togglingRecurringId, setTogglingRecurringId] = useState<string | null>(null);
   const [removingRecurringId, setRemovingRecurringId] = useState<string | null>(null);
+
+  // Search, Filter & Sorting States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "over" | "near" | "ontrack" | "unbudgeted">("all");
+  const [sortBy, setSortBy] = useState<"spent-desc" | "budget-desc" | "util-desc" | "name-asc">("spent-desc");
+
+  // Category Detail Drawer state
+  const [selectedCategoryDetail, setSelectedCategoryDetail] = useState<string | null>(null);
+  const [drawerSearch, setDrawerSearch] = useState("");
+
+  // Recurring filter states
+  const [recurringSearch, setRecurringSearch] = useState("");
+  const [recurringStatusFilter, setRecurringStatusFilter] = useState<"all" | "due" | "paid" | "overdue" | "paused">("all");
 
   const toggleRecurringActive = async (re: any) => {
     setTogglingRecurringId(re.id);
@@ -136,9 +227,16 @@ export function BudgetTab({
   };
 
   const { run: saveNewBudget, loading: savingNewBudget } = useAsyncAction(
-    async (v: any) => { await addItem("budgets", { ...v, budgetMonth: selectedMonth }); },
-    { onSuccess: () => setShowAddBudget(false), onError: (e: any) => showToast?.(`Failed to add budget category: ${e?.message || "Unknown error"}`, "error") }
+    async (v: any) => {
+      await addItem("budgets", { ...v, budgetMonth: selectedMonth });
+    },
+    {
+      onSuccess: () => setShowAddBudget(false),
+      onError: (e: any) =>
+        showToast?.(`Failed to add budget category: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
+
   const { run: saveBudgetEdit, loading: savingBudgetEdit } = useAsyncAction(
     async (v: any) => {
       const isInheritedItem = editBudget.budgetMonth !== selectedMonth;
@@ -151,15 +249,33 @@ export function BudgetTab({
         });
       }
     },
-    { onSuccess: () => setEditBudget(null), onError: (e: any) => showToast?.(`Failed to save budget category: ${e?.message || "Unknown error"}`, "error") }
+    {
+      onSuccess: () => setEditBudget(null),
+      onError: (e: any) =>
+        showToast?.(`Failed to save budget category: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
+
   const { run: saveNewRecurring, loading: savingNewRecurring } = useAsyncAction(
-    async (v: any) => { await addItem("recurringExpenses", v); },
-    { onSuccess: () => setShowAddRecurring(false), onError: (e: any) => showToast?.(`Failed to add recurring expense: ${e?.message || "Unknown error"}`, "error") }
+    async (v: any) => {
+      await addItem("recurringExpenses", v);
+    },
+    {
+      onSuccess: () => setShowAddRecurring(false),
+      onError: (e: any) =>
+        showToast?.(`Failed to add recurring expense: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
+
   const { run: saveRecurringEdit, loading: savingRecurringEdit } = useAsyncAction(
-    async (v: any) => { await updateItem("recurringExpenses", editRecurring.id, v); },
-    { onSuccess: () => setEditRecurring(null), onError: (e: any) => showToast?.(`Failed to save recurring expense: ${e?.message || "Unknown error"}`, "error") }
+    async (v: any) => {
+      await updateItem("recurringExpenses", editRecurring.id, v);
+    },
+    {
+      onSuccess: () => setEditRecurring(null),
+      onError: (e: any) =>
+        showToast?.(`Failed to save recurring expense: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
 
   // Month navigation helpers
@@ -223,7 +339,7 @@ export function BudgetTab({
     return spending;
   }, [state.transactions, state.rentedProperties, selectedMonth]);
 
-  // Previous month spending — for MoM delta comparison (includes rent, same as monthSpending)
+  // Previous month spending for MoM comparisons
   const prevMonthSpending = useMemo(() => {
     const [y, m] = selectedMonth.split("-").map(Number);
     let pm = m - 1,
@@ -260,6 +376,44 @@ export function BudgetTab({
     return spending;
   }, [state.transactions, state.rentedProperties, selectedMonth]);
 
+  // 3-Month Historical Spending Average per Category
+  const historicalAverages = useMemo(() => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    const prevMonths: string[] = [];
+    for (let i = 1; i <= 3; i++) {
+      let pm = m - i;
+      let py = y;
+      while (pm < 1) {
+        pm += 12;
+        py -= 1;
+      }
+      prevMonths.push(`${py}-${String(pm).padStart(2, "0")}`);
+    }
+
+    const catTotals: Record<string, { total: number; count: number; byMonth: Record<string, number> }> = {};
+    state.transactions.forEach((t: any) => {
+      if (!t.date || t.type !== "debit") return;
+      const tMonth = t.date.slice(0, 7);
+      if (prevMonths.includes(tMonth)) {
+        const cat = t.category || "Uncategorized";
+        if (!catTotals[cat]) {
+          catTotals[cat] = { total: 0, count: 0, byMonth: {} };
+        }
+        catTotals[cat].total += Number(t.amount || 0);
+        catTotals[cat].byMonth[tMonth] = (catTotals[cat].byMonth[tMonth] || 0) + Number(t.amount || 0);
+      }
+    });
+
+    const result: Record<string, { avg: number; byMonth: Record<string, number> }> = {};
+    Object.entries(catTotals).forEach(([cat, data]) => {
+      result[cat] = {
+        avg: data.total / 3,
+        byMonth: data.byMonth,
+      };
+    });
+    return { averages: result, prevMonths };
+  }, [state.transactions, selectedMonth]);
+
   // Month-Wise Budget Selection & Inheritance Logic
   const { budgetsToUse, isInherited, inheritedFrom } = useMemo(() => {
     const specific = state.budgets.filter((b: any) => b.budgetMonth === selectedMonth);
@@ -278,7 +432,7 @@ export function BudgetTab({
       return { budgetsToUse: inherited, isInherited: true, inheritedFrom: latestMonth };
     }
 
-    // Fallback to legacy default templates (budgetMonth is null or empty)
+    // Fallback to legacy default templates
     const legacy = state.budgets.filter((b: any) => !b.budgetMonth);
     if (legacy.length > 0) {
       return { budgetsToUse: legacy, isInherited: true, inheritedFrom: "Default Template" };
@@ -287,7 +441,7 @@ export function BudgetTab({
     return { budgetsToUse: [], isInherited: false, inheritedFrom: null };
   }, [state.budgets, selectedMonth]);
 
-  // Lock and duplicate inherited budgets to the selected month (idempotent — skips already-set categories)
+  // Lock and duplicate inherited budgets to the selected month
   const { run: handleLockAndCustomize, loading: lockingBudgets } = useAsyncAction(
     async () => {
       if (!isInherited || budgetsToUse.length === 0) return;
@@ -304,11 +458,15 @@ export function BudgetTab({
           rollover: !!b.rollover,
         });
       }
+      showToast?.(`Locked ${budgetsToUse.length} budgets for ${selectedMonthLabel}`, "success");
     },
-    { onError: (e: any) => showToast?.(`Failed to lock budgets for this month: ${e?.message || "Unknown error"}`, "error") }
+    {
+      onError: (e: any) =>
+        showToast?.(`Failed to lock budgets: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
 
-  // Safe removal of budgets (handles inherited override, deduplication guard)
+  // Safe removal of budgets
   const { run: handleRemoveBudget, loading: removingBudget } = useAsyncAction(
     async (b: any) => {
       const isInheritedItem = b.budgetMonth !== selectedMonth;
@@ -332,16 +490,18 @@ export function BudgetTab({
       } else {
         await removeItem("budgets", b.id);
       }
+      if (selectedCategoryDetail === b.category) {
+        setSelectedCategoryDetail(null);
+      }
+      showToast?.(`Deleted "${b.category}" budget`, "info");
     },
-    { onError: (e: any) => showToast?.(`Failed to remove budget category: ${e?.message || "Unknown error"}`, "error") }
+    {
+      onError: (e: any) =>
+        showToast?.(`Failed to remove budget category: ${e?.message || "Unknown error"}`, "error"),
+    }
   );
 
-  // Rollover: when a category has `rollover` enabled, unused budget from the
-  // immediately preceding month's explicit record carries forward into this
-  // month's effective limit. Intentionally a single-month lookback (not a
-  // compounding chain across many months) — keeps the math easy to audit from
-  // the UI and avoids silently accumulating unbounded credit across a long gap
-  // where the user forgot to set a budget.
+  // Rollover calculation
   const getRolloverAmount = (b: any) => {
     if (!b.rollover) return 0;
     const [y, m] = selectedMonth.split("-").map(Number);
@@ -363,6 +523,7 @@ export function BudgetTab({
     const prevSpent = prevMonthSpending[b.category] || 0;
     return Math.max(0, prevLimit - prevSpent);
   };
+
   const getEffectiveBudget = (b: any) => Number(b.monthly || 0) + getRolloverAmount(b);
 
   const totalBudget = budgetsToUse.reduce((s: number, b: any) => s + getEffectiveBudget(b), 0);
@@ -386,29 +547,7 @@ export function BudgetTab({
     return pct > 80 && pct <= 100;
   }).length;
 
-  // Refs for scrolling to category cards on banner click
-  const categoryRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
-  const [highlightedCategory, setHighlightedCategory] = useState<string | null>(null);
-
-  const scrollToAlertCategories = () => {
-    // Find the first over-budget or approaching-limit category and scroll to it
-    const firstAlert = budgetsToUse.find((b: any) => {
-      const spent = monthSpending[b.category] || 0;
-      const budget = getEffectiveBudget(b);
-      if (budget <= 0) return false;
-      return (spent / budget) * 100 > 80;
-    });
-    if (firstAlert) {
-      const ref = categoryRefs.current[firstAlert.category];
-      if (ref) {
-        ref.scrollIntoView({ behavior: "smooth", block: "center" });
-        setHighlightedCategory(firstAlert.category);
-        setTimeout(() => setHighlightedCategory(null), 2000);
-      }
-    }
-  };
-
-  // Unbudgeted spending — categories with real spend but no budget line
+  // Unbudgeted spending
   const { unbudgetedSpending, totalUnbudgetedSpent } = useMemo(() => {
     const budgetedCats = new Set(budgetsToUse.map((b: any) => b.category));
     const result: Record<string, number> = {};
@@ -419,23 +558,101 @@ export function BudgetTab({
     return { unbudgetedSpending: result, totalUnbudgetedSpent: total };
   }, [monthSpending, budgetsToUse]);
 
-  // Monthly income for selected month — used for savings rate
+  // Monthly income for selected month
   const selectedMonthIncome = useMemo(() => {
     const fromIncome = (state.income || [])
       .filter((e: any) => e.date && e.date.startsWith(selectedMonth))
       .reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
     if (fromIncome > 0) return fromIncome;
-    // Fallback: sum credit transactions for the month
     return state.transactions
       .filter((t: any) => t.date && t.date.startsWith(selectedMonth) && t.type === "credit")
       .reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
   }, [state.income, state.transactions, selectedMonth]);
 
-  // Recurring expense active filter & matching transactions detection
+  // 50 / 30 / 20 Rule Allocation Computation
+  const rule503020 = useMemo(() => {
+    let needsSpent = 0;
+    let wantsSpent = 0;
+    let savingsSpent = 0;
+    let otherSpent = 0;
+
+    Object.entries(monthSpending).forEach(([cat, amt]) => {
+      const val = amt as number;
+      if (NEEDS_CATEGORIES.has(cat)) {
+        needsSpent += val;
+      } else if (WANTS_CATEGORIES.has(cat)) {
+        wantsSpent += val;
+      } else if (SAVINGS_CATEGORIES.has(cat)) {
+        savingsSpent += val;
+      } else {
+        wantsSpent += val;
+      }
+    });
+
+    const totalCalculated = needsSpent + wantsSpent + savingsSpent + otherSpent;
+    const baseIncome = selectedMonthIncome > 0 ? selectedMonthIncome : totalCalculated;
+
+    const needsPct = baseIncome > 0 ? (needsSpent / baseIncome) * 100 : 0;
+    const wantsPct = baseIncome > 0 ? (wantsSpent / baseIncome) * 100 : 0;
+    const savingsPct = baseIncome > 0 ? (savingsSpent / baseIncome) * 100 : 0;
+
+    return {
+      needsSpent,
+      wantsSpent,
+      savingsSpent,
+      needsPct,
+      wantsPct,
+      savingsPct,
+      baseIncome,
+    };
+  }, [monthSpending, selectedMonthIncome]);
+
+  // Filtered & Sorted Budgets List
+  const filteredBudgets = useMemo(() => {
+    let list = [...budgetsToUse];
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((b: any) => b.category.toLowerCase().includes(q));
+    }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      list = list.filter((b: any) => {
+        const spent = monthSpending[b.category] || 0;
+        const budget = getEffectiveBudget(b);
+        const pct = budget > 0 ? (spent / budget) * 100 : 0;
+        if (statusFilter === "over") return pct > 100;
+        if (statusFilter === "near") return pct >= 80 && pct <= 100;
+        if (statusFilter === "ontrack") return pct < 80;
+        return true;
+      });
+    }
+
+    // Sorting
+    list.sort((a: any, b: any) => {
+      const spentA = monthSpending[a.category] || 0;
+      const spentB = monthSpending[b.category] || 0;
+      const budgetA = getEffectiveBudget(a);
+      const budgetB = getEffectiveBudget(b);
+      const utilA = budgetA > 0 ? spentA / budgetA : 0;
+      const utilB = budgetB > 0 ? spentB / budgetB : 0;
+
+      if (sortBy === "spent-desc") return spentB - spentA;
+      if (sortBy === "budget-desc") return budgetB - budgetA;
+      if (sortBy === "util-desc") return utilB - utilA;
+      if (sortBy === "name-asc") return a.category.localeCompare(b.category);
+      return 0;
+    });
+
+    return list;
+  }, [budgetsToUse, searchQuery, statusFilter, sortBy, monthSpending]);
+
+  // Active Recurring Expenses filter & matching
   const activeRecurringExpenses = useMemo(() => {
     const items = state.recurringExpenses || [];
     return items.filter((re: any) => {
-      // Check if SelectedMonth lies within active range [startDate, endDate]
       const selMonthStartStr = `${selectedMonth}-01`;
       const [y, m] = selectedMonth.split("-").map(Number);
       const daysInSelMonth = new Date(y, m, 0).getDate();
@@ -447,15 +664,7 @@ export function BudgetTab({
     });
   }, [state.recurringExpenses, selectedMonth]);
 
-  // Match actual transactions to recurring expenses for the selected month.
-  // Computed once (memoized) and shared by both the stats tally and the per-card
-  // status badge below — each transaction is consumed by at most one recurring
-  // expense (tracked via `usedTxnIds`). Previously each card ran its own
-  // independent `find()` over all transactions, so two recurring items sharing
-  // a category and similar amount (e.g. two EMIs both categorized "EMI") could
-  // both match — and both count as "Paid" against — the SAME single transaction,
-  // double-counting `paidTotal` and showing a false "Paid" badge on an expense
-  // that was never actually recorded.
+  // Match actual transactions to recurring expenses
   const recurringPaymentMatches = useMemo(() => {
     const usedTxnIds = new Set<string>();
     const map: Record<string, any> = {};
@@ -464,7 +673,7 @@ export function BudgetTab({
       const nameLower = (re.name || "").toLowerCase();
       const cat = re.category;
       const amount = Number(re.amount);
-      if (amount <= 0) return; // guard: avoid division by zero in amtMatches
+      if (amount <= 0) return;
 
       const match = state.transactions.find((t: any) => {
         if (usedTxnIds.has(t.id)) return false;
@@ -472,7 +681,7 @@ export function BudgetTab({
         const noteMatches = t.note && t.note.toLowerCase().includes(nameLower);
         const catMatches = t.category === cat;
         const tAmt = Number(t.amount);
-        const amtMatches = Math.abs(tAmt - amount) / amount <= 0.05; // ±5% tolerance
+        const amtMatches = Math.abs(tAmt - amount) / amount <= 0.05;
         return (noteMatches || catMatches) && amtMatches;
       });
       if (match) {
@@ -483,7 +692,7 @@ export function BudgetTab({
     return map;
   }, [activeRecurringExpenses, state.transactions, selectedMonth]);
 
-  // Compute stats for recurring expenses
+  // Recurring stats
   const recurringStats = useMemo(() => {
     const list = activeRecurringExpenses;
     const monthlyCommitment = list
@@ -517,7 +726,6 @@ export function BudgetTab({
         dueCount++;
         dueTotal += Number(re.amount);
 
-        // Check if overdue
         if (selectedMonth === curMonthStr && todayDay > Number(re.dueDay)) {
           overdueCount++;
           overdueTotal += Number(re.amount);
@@ -538,22 +746,57 @@ export function BudgetTab({
       overdueCount,
       overdueTotal,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRecurringExpenses, state.transactions, selectedMonth, recurringPaymentMatches]);
+  }, [activeRecurringExpenses, selectedMonth, recurringPaymentMatches]);
 
-  // One-click Record Payment (Quick Post)
-  const handleQuickPostTransaction = async (expense: any) => {
+  // Filtered Recurring items
+  const filteredRecurring = useMemo(() => {
+    let list = [...activeRecurringExpenses];
+
+    if (recurringSearch.trim()) {
+      const q = recurringSearch.toLowerCase();
+      list = list.filter(
+        (re: any) =>
+          re.name?.toLowerCase().includes(q) ||
+          re.category?.toLowerCase().includes(q)
+      );
+    }
+
     const now = new Date();
     const curMonthStr = today().slice(0, 7);
+    const todayDay = now.getDate();
 
-    // Clamp dueDay to actual days in the selected month (e.g. dueDay=31 in April → 30)
+    if (recurringStatusFilter !== "all") {
+      list = list.filter((re: any) => {
+        const hasPaid = !!recurringPaymentMatches[re.id];
+        if (recurringStatusFilter === "paused") return !re.isActive;
+        if (recurringStatusFilter === "paid") return hasPaid;
+        if (recurringStatusFilter === "overdue") {
+          if (hasPaid || !re.isActive) return false;
+          if (selectedMonth < curMonthStr) return true;
+          if (selectedMonth === curMonthStr && todayDay > Number(re.dueDay)) return true;
+          return false;
+        }
+        if (recurringStatusFilter === "due") {
+          return re.isActive && !hasPaid;
+        }
+        return true;
+      });
+    }
+
+    list.sort((a: any, b: any) => (Number(a.dueDay) || 0) - (Number(b.dueDay) || 0));
+    return list;
+  }, [activeRecurringExpenses, recurringSearch, recurringStatusFilter, recurringPaymentMatches, selectedMonth]);
+
+  // One-click Quick Pay
+  const handleQuickPostTransaction = async (expense: any) => {
+    const curMonthStr = today().slice(0, 7);
     const [selY, selM] = selectedMonth.split("-").map(Number);
     const daysInSelMonth = new Date(selY, selM, 0).getDate();
     const clampedDay = Math.min(Number(expense.dueDay), daysInSelMonth);
 
     let payDate = `${selectedMonth}-${String(clampedDay).padStart(2, "0")}`;
     if (selectedMonth === curMonthStr) {
-      payDate = today(); // use today's local date for current month
+      payDate = today();
     }
 
     const defaultAccId = expense.accountId || state.bankAccounts[0]?.id || "";
@@ -569,6 +812,7 @@ export function BudgetTab({
         category: expense.category,
         note: `${expense.name} (Recurring)`,
       });
+      showToast?.(`Recorded ₹${expense.amount} for "${expense.name}"`, "success");
     } catch (e: any) {
       showToast?.(`Failed to record payment: ${e?.message || "Unknown error"}`, "error");
     } finally {
@@ -576,6 +820,44 @@ export function BudgetTab({
     }
   };
 
+  // Populate from 3-Month Average
+  const handleApply3MonthAverage = async () => {
+    try {
+      let count = 0;
+      for (const [cat, data] of Object.entries(historicalAverages.averages)) {
+        if (data.avg <= 0) continue;
+        const rounded = Math.ceil(data.avg / 500) * 500;
+        const existing = budgetsToUse.find((b: any) => b.category === cat);
+        if (existing) {
+          if (existing.budgetMonth === selectedMonth) {
+            await updateItem("budgets", existing.id, { monthly: rounded });
+          } else {
+            await addItem("budgets", {
+              owner: existing.owner || "self",
+              category: cat,
+              monthly: rounded,
+              budgetMonth: selectedMonth,
+              rollover: !!existing.rollover,
+            });
+          }
+        } else {
+          await addItem("budgets", {
+            owner: "self",
+            category: cat,
+            monthly: rounded,
+            budgetMonth: selectedMonth,
+            rollover: false,
+          });
+        }
+        count++;
+      }
+      showToast?.(`Applied 3-month average targets to ${count} categories`, "success");
+    } catch (e: any) {
+      showToast?.(`Failed to apply averages: ${e?.message || "Unknown error"}`, "error");
+    }
+  };
+
+  // CSV Export
   const downloadCSV = () => {
     const q = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [
@@ -632,9 +914,39 @@ export function BudgetTab({
     URL.revokeObjectURL(url);
   };
 
+  // Category Detail Transactions
+  const categoryTransactions = useMemo(() => {
+    if (!selectedCategoryDetail) return [];
+    return state.transactions
+      .filter(
+        (t: any) =>
+          t.date &&
+          t.date.startsWith(selectedMonth) &&
+          t.type === "debit" &&
+          (t.category || "Uncategorized") === selectedCategoryDetail
+      )
+      .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
+  }, [state.transactions, selectedCategoryDetail, selectedMonth]);
+
+  const filteredCategoryTransactions = useMemo(() => {
+    if (!drawerSearch.trim()) return categoryTransactions;
+    const q = drawerSearch.toLowerCase();
+    return categoryTransactions.filter(
+      (t: any) =>
+        t.note?.toLowerCase().includes(q) ||
+        String(t.amount).includes(q) ||
+        t.date?.includes(q)
+    );
+  }, [categoryTransactions, drawerSearch]);
+
+  const activeDetailBudget = useMemo(() => {
+    if (!selectedCategoryDetail) return null;
+    return budgetsToUse.find((b: any) => b.category === selectedCategoryDetail) || null;
+  }, [budgetsToUse, selectedCategoryDetail]);
+
   return (
     <div className="tab-content-enter">
-      {/* Dynamic Month Selection Header & Tabs Selector */}
+      {/* ── HEADER & NAVIGATION BAR ── */}
       <div
         style={{
           display: "flex",
@@ -642,26 +954,31 @@ export function BudgetTab({
           alignItems: "center",
           flexWrap: "wrap",
           gap: 16,
-          marginBottom: 28,
+          marginBottom: 24,
+          padding: "16px 20px",
+          background: "var(--surface-0)",
+          border: "1px solid var(--t-line)",
+          borderRadius: 16,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Chevron Navigation */}
+        {/* Month Selector & Jump */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div
             style={{
               display: "flex",
-              background: "var(--t-line)",
+              background: "var(--t-paper)",
               borderRadius: 10,
               padding: 3,
               border: "1px solid var(--t-line)",
               alignItems: "center",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
             }}
           >
             <Button
               variant="ghost"
               size="sm"
               onClick={handlePrevMonth}
-              style={{ padding: 6, borderRadius: 8, height: "auto" }}
+              style={{ padding: "6px 8px", borderRadius: 8, height: "auto" }}
               aria-label="Previous month"
             >
               <ChevronLeft size={16} />
@@ -670,29 +987,47 @@ export function BudgetTab({
               style={{
                 padding: "4px 14px",
                 fontWeight: 800,
-                fontSize: 13,
-                minWidth: 120,
+                fontSize: 14,
+                minWidth: 140,
                 textAlign: "center",
                 color: THEME.ink,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 6,
+                gap: 8,
               }}
             >
-              <Calendar size={13} color={THEME.accent} />
+              <Calendar size={14} color={THEME.accent} />
               {selectedMonthLabel}
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={handleNextMonth}
-              style={{ padding: 6, borderRadius: 8, height: "auto" }}
+              style={{ padding: "6px 8px", borderRadius: 8, height: "auto" }}
               aria-label="Next month"
             >
               <ChevronRight size={16} />
             </Button>
           </div>
+
+          {/* Month input / quick jump */}
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 10,
+              border: "1px solid var(--t-line)",
+              background: "var(--t-paper)",
+              color: THEME.ink,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+            title="Pick specific month"
+          />
 
           {/* Today Shortcut Button */}
           {selectedMonth !== today().slice(0, 7) && (
@@ -709,249 +1044,114 @@ export function BudgetTab({
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
+                background: "var(--t-paper)",
               }}
             >
-              <Calendar size={13} />
-              Go to Today
+              <Clock size={13} />
+              Current Month
             </Button>
           )}
         </div>
 
         {/* Sub Navigation Segmented Control */}
         <div className="demat-portfolio-bar no-scrollbar" style={{ marginBottom: 0 }}>
-          {(["budget", "recurring"] as const).map((tab) => (
+          {(
+            [
+              { id: "budget", label: "Budget Tracker", icon: BarChart2 },
+              { id: "recurring", label: "Fixed & Recurring", icon: Repeat },
+              { id: "analytics", label: "Analytics & Trends", icon: TrendingUp },
+            ] as const
+          ).map(({ id, label, icon: TabIcon }) => (
             <button
-              key={tab}
-              onClick={() => setActiveSubTab(tab)}
-              aria-pressed={activeSubTab === tab}
-              className={`demat-portfolio-pill ${activeSubTab === tab ? "active" : ""}`}
-              style={{ padding: "6px 16px" }}
+              key={id}
+              onClick={() => setActiveSubTab(id)}
+              aria-pressed={activeSubTab === id}
+              className={`demat-portfolio-pill ${activeSubTab === id ? "active" : ""}`}
+              style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700 }}
             >
-              {tab === "budget" ? <BarChart2 size={13} /> : <Repeat size={13} />}
-              {tab === "budget" ? "Budget Tracker" : "Fixed & Recurring"}
+              <TabIcon size={14} />
+              {label}
             </button>
           ))}
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/*                     1. BUDGET TRACKER TAB                */}
+      {/*                     1. BUDGET TRACKER VIEW               */}
       {/* ======================================================== */}
       {activeSubTab === "budget" && (
         <>
           {/* Budget Alert Banner */}
           {(overBudgetCount > 0 || approachingBudgetCount > 0) && (
             <Card
-              onClick={scrollToAlertCategories}
               style={{
                 background:
                   overBudgetCount > 0
-                    ? `color-mix(in srgb, ${THEME.rust} 4%, transparent)`
-                    : `color-mix(in srgb, ${THEME.gold} 4%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${overBudgetCount > 0 ? THEME.rust : THEME.gold} 27%, transparent)`,
+                    ? `color-mix(in srgb, ${THEME.rust} 5%, var(--t-paper))`
+                    : `color-mix(in srgb, ${THEME.gold} 5%, var(--t-paper))`,
+                border: `1px solid color-mix(in srgb, ${overBudgetCount > 0 ? THEME.rust : THEME.gold} 30%, transparent)`,
                 padding: "14px 20px",
                 marginBottom: 24,
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
-                cursor: "pointer",
-                transition: "all 0.2s",
+                gap: 14,
+                borderRadius: 14,
               }}
             >
               {overBudgetCount > 0 ? (
-                <AlertCircle size={18} color={THEME.rust} />
+                <AlertCircle size={20} color={THEME.rust} />
               ) : (
-                <AlertTriangle size={18} color={THEME.gold} />
+                <AlertTriangle size={20} color={THEME.gold} />
               )}
               <div style={{ flex: 1 }}>
                 <span
                   style={{
-                    fontWeight: 700,
+                    fontWeight: 800,
                     fontSize: 14,
                     color: overBudgetCount > 0 ? THEME.rust : THEME.gold,
                   }}
                 >
                   {overBudgetCount > 0 && (
                     <span>
-                      {overBudgetCount} {overBudgetCount === 1 ? "category" : "categories"} over
-                      budget
+                      {overBudgetCount} {overBudgetCount === 1 ? "category" : "categories"} exceeded
+                      target limit
                     </span>
                   )}
                   {overBudgetCount > 0 && approachingBudgetCount > 0 && (
-                    <span style={{ color: THEME.muted }}>, </span>
+                    <span style={{ color: THEME.muted }}> · </span>
                   )}
                   {approachingBudgetCount > 0 && (
                     <span style={{ color: THEME.gold }}>
-                      {approachingBudgetCount} approaching limit
+                      {approachingBudgetCount} approaching warning limit (80%+)
                     </span>
                   )}
                 </span>
-                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2, fontWeight: 500 }}>
-                  Click to scroll to flagged categories
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2, fontWeight: 500 }}>
+                  Click any category card below to inspect all matching ledger transactions.
                 </div>
               </div>
-              <ArrowRight size={16} color={THEME.muted} />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStatusFilter(overBudgetCount > 0 ? "over" : "near")}
+                style={{
+                  border: `1px solid color-mix(in srgb, ${overBudgetCount > 0 ? THEME.rust : THEME.gold} 40%, transparent)`,
+                  color: overBudgetCount > 0 ? THEME.rust : THEME.gold,
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
+              >
+                Filter Flagged
+              </Button>
             </Card>
           )}
-
-          {/* Monthly Budget Summary Stats */}
-          {budgetsToUse.length > 0 &&
-            (() => {
-              const utilizationPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
-              const remaining = Math.max(0, totalBudget - totalSpent);
-              const utilizationColor =
-                utilizationPct > 100 ? THEME.rust : utilizationPct > 80 ? THEME.gold : THEME.sage;
-              const utilizationFillClass =
-                utilizationPct > 100
-                  ? "progress-fill-rust"
-                  : utilizationPct > 80
-                    ? "progress-fill-gold"
-                    : "progress-fill-sage";
-              return (
-                <Card
-                  style={{
-                    marginBottom: 24,
-                    padding: "16px 24px",
-                    border: `1px solid ${THEME.line}`,
-                    background: "var(--surface-0)",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 10,
-                      letterSpacing: "0.2em",
-                      textTransform: "uppercase",
-                      color: THEME.muted,
-                      marginBottom: 16,
-                      fontWeight: 800,
-                    }}
-                  >
-                    Monthly Budget Summary
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                      gap: 16,
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: THEME.muted,
-                          fontWeight: 600,
-                          marginBottom: 4,
-                        }}
-                      >
-                        Total Budget
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          fontSize: 20,
-                          fontWeight: 600,
-                          color: THEME.accent,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        <Money value={totalBudget} variant="full" />
-                      </div>
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: THEME.muted,
-                          fontWeight: 600,
-                          marginBottom: 4,
-                        }}
-                      >
-                        Total Spent
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          fontSize: 20,
-                          fontWeight: 600,
-                          color: totalSpent > totalBudget ? THEME.rust : THEME.ink,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        <Money value={totalSpent} variant="full" />
-                      </div>
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: THEME.muted,
-                          fontWeight: 600,
-                          marginBottom: 4,
-                        }}
-                      >
-                        Remaining
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          fontSize: 20,
-                          fontWeight: 600,
-                          color: remaining > 0 ? THEME.sage : THEME.rust,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        {totalSpent > totalBudget ? (
-                          <>
-                            -<Money value={totalSpent - totalBudget} variant="full" />
-                          </>
-                        ) : (
-                          <Money value={remaining} variant="full" />
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: THEME.muted,
-                          fontWeight: 600,
-                          marginBottom: 4,
-                        }}
-                      >
-                        Utilization
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div
-                          style={{
-                            fontFamily: "var(--font-display)",
-                            fontSize: 20,
-                            fontWeight: 600,
-                            color: utilizationColor,
-                            fontVariantNumeric: "tabular-nums",
-                          }}
-                        >
-                          {utilizationPct.toFixed(0)}%
-                        </div>
-                        <div className="progress-track" style={{ width: 60 }}>
-                          <div
-                            className={`progress-fill ${utilizationFillClass}`}
-                            style={{ width: `${Math.min(utilizationPct, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })()}
 
           {/* Budget Inheritance Notification Banner */}
           {isInherited && budgetsToUse.length > 0 && (
             <Card
               style={{
-                background: `color-mix(in srgb, ${THEME.accent} 3%, transparent)`,
-                border: `1px dashed color-mix(in srgb, ${THEME.accent} 33%, transparent)`,
+                background: `color-mix(in srgb, ${THEME.accent} 4%, var(--t-paper))`,
+                border: `1px dashed color-mix(in srgb, ${THEME.accent} 40%, transparent)`,
                 padding: "14px 20px",
                 marginBottom: 24,
                 display: "flex",
@@ -959,74 +1159,49 @@ export function BudgetTab({
                 justifyContent: "space-between",
                 gap: 16,
                 flexWrap: "wrap",
-                borderRadius: 12,
+                borderRadius: 14,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <Repeat
                   size={18}
                   color={THEME.accent}
-                  style={{ animation: "spin 12s linear infinite" }}
+                  style={{ animation: "spin 14s linear infinite" }}
                 />
-                <span style={{ fontWeight: 600, fontSize: 13.5, color: THEME.ink }}>
-                  Showing inherited budget limits from{" "}
-                  <strong>
-                    {inheritedFrom === "Default Template"
-                      ? "Legacy Baseline"
-                      : new Date(inheritedFrom + "-01").toLocaleDateString("en-IN", {
-                          month: "long",
-                          year: "numeric",
-                        })}
-                  </strong>
-                  .
-                </span>
+                <div>
+                  <span style={{ fontWeight: 700, fontSize: 13.5, color: THEME.ink }}>
+                    Showing inherited budget limits from{" "}
+                    <strong>
+                      {inheritedFrom === "Default Template"
+                        ? "Baseline Template"
+                        : new Date(inheritedFrom + "-01").toLocaleDateString("en-IN", {
+                            month: "long",
+                            year: "numeric",
+                          })}
+                    </strong>
+                  </span>
+                  <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
+                    Lock these limits to customize individual category budgets for {selectedMonthLabel}.
+                  </div>
+                </div>
               </div>
-              <Button
-                onClick={handleLockAndCustomize}
-                disabled={lockingBudgets}
-                loading={lockingBudgets}
-                size="sm"
-                variant="ghost"
-                style={{
-                  border: `1px solid ${THEME.accent}`,
-                  color: THEME.accent,
-                  fontWeight: 700,
-                  borderRadius: 8,
-                }}
-              >
-                Lock & Customize this Month
-              </Button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button
+                  onClick={handleLockAndCustomize}
+                  disabled={lockingBudgets}
+                  loading={lockingBudgets}
+                  size="sm"
+                  variant="accent"
+                  style={{ fontWeight: 700, borderRadius: 8 }}
+                >
+                  <Copy size={13} style={{ marginRight: 4 }} />
+                  Lock & Customize Month
+                </Button>
+              </div>
             </Card>
           )}
 
-          <SectionTitle
-            sub={`Set monthly limits per category and track real spending for ${selectedMonthLabel}`}
-            rightElement={
-              budgetsToUse.length > 0 && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <Button
-                    onClick={downloadCSV}
-                    variant="ghost"
-                    icon={<Download size={14} />}
-                    style={{ border: "1px solid var(--t-line)", borderRadius: 8 }}
-                  >
-                    Export CSV
-                  </Button>
-                  <Button
-                    onClick={() => setShowAddBudget(true)}
-                    variant="accent"
-                    icon={<Plus size={14} />}
-                  >
-                    Add Budget Category
-                  </Button>
-                </div>
-              )
-            }
-          >
-            Budgeting
-          </SectionTitle>
-
-          {/* Summary Tiles */}
+          {/* ── Summary KPI Tiles ── */}
           {(() => {
             const allSpent = totalSpent + totalUnbudgetedSpent;
             const savingsAmt = selectedMonthIncome - allSpent;
@@ -1044,9 +1219,9 @@ export function BudgetTab({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
                   gap: 14,
-                  marginBottom: 28,
+                  marginBottom: 24,
                 }}
               >
                 {[
@@ -1060,7 +1235,7 @@ export function BudgetTab({
                     Icon: Target,
                   },
                   {
-                    label: "Spent in Month",
+                    label: "Actual Spent",
                     value: fmtINRFull(allSpent),
                     numericValue: allSpent,
                     formatValue: fmtINRFull,
@@ -1073,35 +1248,35 @@ export function BudgetTab({
                     Icon: Receipt,
                   },
                   {
-                    label: "Remaining Balance",
+                    label: "Remaining Capacity",
                     value: fmtINRFull(Math.max(0, totalBudget - totalSpent)),
                     numericValue: Math.max(0, totalBudget - totalSpent),
                     formatValue: fmtINRFull,
-                    sub: totalBudget - totalSpent > 0 ? "Left to spend" : "Budget exceeded",
-                    color: totalBudget - totalSpent > 0 ? THEME.sage : THEME.rust,
+                    sub: totalBudget - totalSpent >= 0 ? "Under budget" : "Budget exceeded",
+                    color: totalBudget - totalSpent >= 0 ? THEME.sage : THEME.rust,
                     Icon: Wallet,
                   },
                   {
-                    label: "Active Buckets",
+                    label: "Active Categories",
                     value: String(budgetsToUse.length),
                     numericValue: budgetsToUse.length,
                     formatValue: (n: number) => Math.round(n).toString(),
                     sub:
                       totalUnbudgetedSpent > 0
-                        ? `+${privacyMode ? "••••" : fmtINRFull(totalUnbudgetedSpent)} unbudgeted`
-                        : "Budgeted categories",
+                        ? `+${Object.keys(unbudgetedSpending).length} unbudgeted`
+                        : "All tracked",
                     color: THEME.muted,
                     Icon: BarChart2,
                   },
                   {
-                    label: "Savings Rate",
+                    label: "Monthly Savings Rate",
                     value: savingsRate !== null ? `${savingsRate.toFixed(1)}%` : "—",
                     numericValue: savingsRate !== null ? savingsRate : undefined,
                     formatValue: (n: number) => `${n.toFixed(1)}%`,
                     sub:
                       selectedMonthIncome > 0
                         ? `Income: ${privacyMode ? "••••" : fmtINRFull(selectedMonthIncome)}`
-                        : "Add income data",
+                        : "No income recorded",
                     color: savingsColor,
                     Icon: TrendingUp,
                   },
@@ -1121,7 +1296,164 @@ export function BudgetTab({
             );
           })()}
 
-          {/* Burn Rate Widget */}
+          {/* ── 50 / 30 / 20 Budget Rule Breakdown ── */}
+          <Card
+            style={{
+              marginBottom: 24,
+              padding: "18px 24px",
+              border: "1px solid var(--t-line)",
+              borderRadius: 16,
+              background: "var(--surface-0)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Sparkles size={16} color={THEME.accent} />
+                <span style={{ fontSize: 13, fontWeight: 800, color: THEME.ink }}>
+                  50 / 30 / 20 Financial Wellness Rule
+                </span>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    color: THEME.muted,
+                    background: "rgba(128,128,128,0.08)",
+                    padding: "2px 8px",
+                    borderRadius: 6,
+                    fontWeight: 600,
+                  }}
+                >
+                  Standard Guideline
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
+                Total Spend Analyzed:{" "}
+                <strong style={{ color: THEME.ink }}>
+                  <Money value={rule503020.needsSpent + rule503020.wantsSpent + rule503020.savingsSpent} variant="full" />
+                </strong>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 16,
+              }}
+            >
+              {/* Needs (50%) */}
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  background: `color-mix(in srgb, ${THEME.accent} 6%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${THEME.accent} 20%, transparent)`,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink }}>
+                    Needs (Target ≤ 50%)
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: THEME.accent }}>
+                    {rule503020.needsPct.toFixed(0)}%
+                  </span>
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: THEME.ink, marginBottom: 8 }}>
+                  <Money value={rule503020.needsSpent} variant="full" />
+                </div>
+                <div className="progress-track" style={{ height: 6 }}>
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.min(rule503020.needsPct, 100)}%`,
+                      background: rule503020.needsPct > 55 ? THEME.rust : THEME.accent,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 10.5, color: THEME.muted, marginTop: 6 }}>
+                  Rent, Groceries, Utilities, Bills, EMIs, Health
+                </div>
+              </div>
+
+              {/* Wants (30%) */}
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  background: `color-mix(in srgb, ${THEME.gold} 6%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${THEME.gold} 20%, transparent)`,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink }}>
+                    Wants (Target ≤ 30%)
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: THEME.gold }}>
+                    {rule503020.wantsPct.toFixed(0)}%
+                  </span>
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: THEME.ink, marginBottom: 8 }}>
+                  <Money value={rule503020.wantsSpent} variant="full" />
+                </div>
+                <div className="progress-track" style={{ height: 6 }}>
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.min(rule503020.wantsPct, 100)}%`,
+                      background: rule503020.wantsPct > 35 ? THEME.rust : THEME.gold,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 10.5, color: THEME.muted, marginTop: 6 }}>
+                  Dining, Shopping, Entertainment, Travel, Hobbies
+                </div>
+              </div>
+
+              {/* Savings & Investments (20%) */}
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  background: `color-mix(in srgb, ${THEME.sage} 6%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${THEME.sage} 20%, transparent)`,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: THEME.ink }}>
+                    Savings (Target ≥ 20%)
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: THEME.sage }}>
+                    {rule503020.savingsPct.toFixed(0)}%
+                  </span>
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: THEME.ink, marginBottom: 8 }}>
+                  <Money value={rule503020.savingsSpent} variant="full" />
+                </div>
+                <div className="progress-track" style={{ height: 6 }}>
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.min(rule503020.savingsPct, 100)}%`,
+                      background: THEME.sage,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 10.5, color: THEME.muted, marginTop: 6 }}>
+                  Investments, SIPs, PPF, NPS, Fixed Deposits
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* ── Burn Rate Pacing Widget ── */}
           {totalBudget > 0 &&
             (() => {
               const now = new Date();
@@ -1141,30 +1473,30 @@ export function BudgetTab({
                   : spentPct > monthElapsedPct - 5
                     ? THEME.gold
                     : THEME.sage;
-              const r = 44,
-                sz = 110,
+              const r = 46,
+                sz = 116,
                 circ = 2 * Math.PI * r;
 
               return (
-                <Card style={{ marginBottom: 32, padding: "28px 32px" }}>
+                <Card style={{ marginBottom: 28, padding: "24px 28px", borderRadius: 16 }}>
                   <div
                     style={{
-                      fontSize: 10,
-                      letterSpacing: "0.2em",
+                      fontSize: 11,
+                      letterSpacing: "0.15em",
                       textTransform: "uppercase",
                       color: THEME.muted,
-                      marginBottom: 24,
+                      marginBottom: 20,
                       fontWeight: 800,
                     }}
                   >
-                    Budget Burn Rate — Day {daysPassed} of {daysInMonth} ({selectedMonthLabel})
+                    Budget Burn Rate & Pacing — Day {daysPassed} of {daysInMonth} ({selectedMonthLabel})
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 48, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
                     <div style={{ position: "relative", flexShrink: 0 }}>
                       <svg
                         width={sz}
                         height={sz}
-                        style={{ filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.05))" }}
+                        style={{ filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.06))" }}
                       >
                         <circle
                           cx={sz / 2}
@@ -1172,7 +1504,7 @@ export function BudgetTab({
                           r={r}
                           fill="none"
                           stroke={THEME.line}
-                          strokeWidth="10"
+                          strokeWidth="11"
                         />
                         <circle
                           cx={sz / 2}
@@ -1180,7 +1512,7 @@ export function BudgetTab({
                           r={r}
                           fill="none"
                           stroke={THEME.muted}
-                          strokeWidth="10"
+                          strokeWidth="11"
                           opacity="0.15"
                           strokeDasharray={`${(monthElapsedPct / 100) * circ} ${circ}`}
                           strokeDashoffset={circ / 4}
@@ -1192,7 +1524,7 @@ export function BudgetTab({
                           r={r}
                           fill="none"
                           stroke={burnColor}
-                          strokeWidth="10"
+                          strokeWidth="11"
                           strokeDasharray={`${Math.min(spentPct / 100, 1) * circ} ${circ}`}
                           strokeDashoffset={circ / 4}
                           strokeLinecap="round"
@@ -1205,15 +1537,15 @@ export function BudgetTab({
                           y={sz / 2 - 4}
                           textAnchor="middle"
                           fontFamily="var(--font-display)"
-                          fontSize="18"
-                          fontWeight="600"
+                          fontSize="19"
+                          fontWeight="700"
                           fill={THEME.ink}
                         >
                           {animatedSpentPct.toFixed(0)}%
                         </text>
                         <text
                           x={sz / 2}
-                          y={sz / 2 + 14}
+                          y={sz / 2 + 15}
                           textAnchor="middle"
                           fontSize="10"
                           fontWeight="700"
@@ -1225,37 +1557,30 @@ export function BudgetTab({
                       </svg>
                     </div>
                     <div style={{ flex: 1, minWidth: 280 }}>
-                      <div style={{ display: "grid", gap: 14 }}>
+                      <div style={{ display: "grid", gap: 12 }}>
                         {[
                           {
-                            label: "Month progress",
-                            val: monthElapsedPct.toFixed(0) + "%",
+                            label: "Month Progress Elapsed",
+                            val: `${monthElapsedPct.toFixed(0)}% (${daysPassed}/${daysInMonth} days)`,
                             color: THEME.muted,
-                            isCurrency: false,
                           },
                           {
-                            label: "Budget spent",
-                            val: spentPct.toFixed(0) + "%",
+                            label: "Budget Spent",
+                            val: `${spentPct.toFixed(0)}% (${totalBudget > 0 ? ((totalSpent / totalBudget) * 100).toFixed(0) : 0}%)`,
                             color: burnColor,
-                            isCurrency: false,
                           },
                           {
-                            label: "Spent so far",
-                            val: <Money value={totalSpent} variant="full" />,
-                            color: THEME.ink,
-                          },
-                          {
-                            label: "Daily average",
+                            label: "Daily Average Spending",
                             val: (
                               <>
                                 <Money value={daysPassed > 0 ? totalSpent / daysPassed : 0} variant="full" />{" "}
                                 / day
                               </>
                             ),
-                            color: THEME.muted,
+                            color: THEME.ink,
                           },
                           {
-                            label: "Projected month-end",
+                            label: "Projected Month-End Outgo",
                             val: (
                               <Money
                                 value={daysPassed > 0 ? (totalSpent / daysPassed) * daysInMonth : 0}
@@ -1271,7 +1596,7 @@ export function BudgetTab({
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              fontSize: 14,
+                              fontSize: 13.5,
                             }}
                           >
                             <span style={{ color: THEME.muted, fontWeight: 600 }}>{label}</span>
@@ -1285,13 +1610,13 @@ export function BudgetTab({
                       </div>
                       <div
                         style={{
-                          marginTop: 20,
-                          fontSize: 13,
-                          padding: "12px 16px",
+                          marginTop: 18,
+                          fontSize: 12.5,
+                          padding: "10px 16px",
                           borderRadius: 10,
                           background: onTrack
-                            ? `color-mix(in srgb, ${THEME.sage} 6%, transparent)`
-                            : `color-mix(in srgb, ${THEME.rust} 6%, transparent)`,
+                            ? `color-mix(in srgb, ${THEME.sage} 7%, transparent)`
+                            : `color-mix(in srgb, ${THEME.rust} 7%, transparent)`,
                           color: onTrack ? THEME.sage : THEME.rust,
                           fontWeight: 700,
                           display: "flex",
@@ -1301,8 +1626,8 @@ export function BudgetTab({
                       >
                         {onTrack ? <Check size={16} /> : <AlertCircle size={16} />}
                         {onTrack
-                          ? "Spending is perfectly in line with the month progress."
-                          : "You are overpacing — spending faster than month progress."}
+                          ? "Spending is pacing smoothly in line with the month calendar."
+                          : "You are overpacing — spending velocity is higher than month progress."}
                       </div>
                     </div>
                   </div>
@@ -1310,130 +1635,241 @@ export function BudgetTab({
               );
             })()}
 
-          {/* Empty State vs Budget List */}
-          {budgetsToUse.length === 0 ? (
+          {/* ── TOOLBAR: SEARCH, FILTERS, SORTS & ACTIONS ── */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            {/* Search Input */}
+            <div style={{ position: "relative", minWidth: 220, flex: "1 1 220px", maxWidth: 360 }}>
+              <Search
+                size={14}
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: THEME.muted,
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search categories..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px 8px 34px",
+                  borderRadius: 10,
+                  border: "1px solid var(--t-line)",
+                  background: "var(--surface-0)",
+                  color: THEME.ink,
+                  fontSize: 13,
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            {/* Filter Pills */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {(
+                [
+                  { id: "all", label: `All (${budgetsToUse.length})`, color: THEME.accent },
+                  { id: "over", label: `Over Budget (${overBudgetCount})`, color: THEME.rust },
+                  { id: "near", label: `Near Limit (${approachingBudgetCount})`, color: THEME.gold },
+                  { id: "ontrack", label: `On Track`, color: THEME.sage },
+                ] as const
+              ).map(({ id, label, color }) => (
+                <button
+                  key={id}
+                  onClick={() => setStatusFilter(id)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: "1px solid",
+                    borderColor:
+                      statusFilter === id
+                        ? (color || THEME.accent)
+                        : "var(--t-line)",
+                    background:
+                      statusFilter === id
+                        ? `color-mix(in srgb, ${color || THEME.accent} 12%, transparent)`
+                        : "var(--surface-0)",
+                    color: statusFilter === id ? (color || THEME.accent) : THEME.muted,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Sort & Action buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <select
+                value={sortBy}
+                onChange={(e: any) => setSortBy(e.target.value)}
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border: "1px solid var(--t-line)",
+                  background: "var(--surface-0)",
+                  color: THEME.ink,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <option value="spent-desc">Sort: Highest Spend</option>
+                <option value="budget-desc">Sort: Highest Budget</option>
+                <option value="util-desc">Sort: % Utilized</option>
+                <option value="name-asc">Sort: A-Z</option>
+              </select>
+
+              {budgetsToUse.length === 0 && (
+                <Button
+                  onClick={handleApply3MonthAverage}
+                  variant="ghost"
+                  icon={<Sparkles size={13} />}
+                  style={{ border: "1px solid var(--t-line)", borderRadius: 8, fontSize: 12 }}
+                >
+                  Auto-Populate from 3-Mo Avg
+                </Button>
+              )}
+
+              <Button
+                onClick={downloadCSV}
+                variant="ghost"
+                icon={<Download size={13} />}
+                style={{ border: "1px solid var(--t-line)", borderRadius: 8, fontSize: 12 }}
+              >
+                Export CSV
+              </Button>
+
+              <Button
+                onClick={() => setShowAddBudget(true)}
+                variant="accent"
+                icon={<Plus size={14} />}
+                style={{ fontSize: 13, fontWeight: 700 }}
+              >
+                Add Category
+              </Button>
+            </div>
+          </div>
+
+          {/* ── Category Cards Grid ── */}
+          {filteredBudgets.length === 0 ? (
             <EmptyState
               icon={BarChart2}
-              title={`No Budgets for ${selectedMonthLabel}`}
-              description="Set monthly spending limits per category — Food, Rent, Entertainment, Transport — and get real-time alerts before you overspend."
-              pills={["Category Budgets", "Monthly Limits", "Spend vs Budget", "Burn Rate Chart"]}
-              buttonLabel="Create Budget"
+              title={
+                searchQuery || statusFilter !== "all"
+                  ? "No matching categories found"
+                  : `No Budgets Set for ${selectedMonthLabel}`
+              }
+              description={
+                searchQuery || statusFilter !== "all"
+                  ? "Try clearing your search query or filter chips above."
+                  : "Set monthly spending limits per category — Food, Rent, Entertainment, Transport — and track real-time pacing with drilldowns."
+              }
+              pills={["Category Limits", "Spend Drilldown", "Pacing Meters", "Rollover Balances"]}
+              buttonLabel="Create Budget Category"
               onAdd={() => setShowAddBudget(true)}
             />
           ) : (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
                 gap: 16,
               }}
             >
-              {budgetsToUse.map((b: any) => {
+              {filteredBudgets.map((b: any) => {
                 const spent = monthSpending[b.category] || 0;
                 const prevSpent = prevMonthSpending[b.category] || 0;
                 const rolledOver = getRolloverAmount(b);
                 const budget = getEffectiveBudget(b);
                 const pct = budget > 0 ? (spent / budget) * 100 : 0;
                 const over = pct > 100;
-                const barColor = over ? THEME.rust : pct > 90 ? THEME.gold : THEME.sage;
+                const barColor = over ? THEME.rust : pct > 80 ? THEME.gold : THEME.sage;
                 const Icon = getCatIcon(b.category);
 
-                const now = new Date();
-                const currentMonthStr = today().slice(0, 7);
-                const isCurrentMonth = selectedMonth === currentMonthStr;
-
-                const [selYear, selMonth] = selectedMonth.split("-").map(Number);
-                const daysInMonth = new Date(selYear, selMonth, 0).getDate();
-                const daysPassed = isCurrentMonth ? now.getDate() : daysInMonth;
-
-                const projected = daysPassed > 0 ? (spent / daysPassed) * daysInMonth : 0;
-                const projectedPct = budget > 0 ? (projected / budget) * 100 : 0;
-
-                // Per-category status badge
                 const statusBadge = (() => {
                   if (over) {
                     return {
                       label: `Over by ${privacyMode ? "••••" : fmtINRFull(spent - budget)}`,
                       color: THEME.rust,
                       icon: AlertCircle,
-                      variant: "danger" as const,
                     };
                   } else if (pct >= 80) {
                     return {
                       label: `${pct.toFixed(0)}% used`,
                       color: THEME.gold,
                       icon: AlertTriangle,
-                      variant: "warning" as const,
                     };
                   } else {
                     return {
                       label: "On track",
                       color: THEME.sage,
                       icon: CheckCircle2,
-                      variant: "success" as const,
                     };
                   }
                 })();
 
                 const StatusIcon = statusBadge.icon;
-                const isHighlighted = highlightedCategory === b.category;
 
                 return (
-                  // `Card` is a plain function component (no forwardRef), so a `ref` passed
-                  // directly to it is silently dropped by React — that previously left
-                  // `categoryRefs` permanently empty and made "click to scroll to flagged
-                  // categories" (scrollToAlertCategories) a dead feature. Carrying the ref on
-                  // this wrapper div instead fixes the scroll-into-view + highlight pulse.
-                  <div
-                    key={b.id}
-                    ref={(el: HTMLDivElement | null) => {
-                      categoryRefs.current[b.category] = el;
-                    }}
-                  >
                   <Card
+                    key={b.id}
+                    onClick={() => setSelectedCategoryDetail(b.category)}
                     style={{
                       padding: "18px 20px",
-                      borderTop: `3px solid ${barColor}`,
+                      borderTop: `4px solid ${barColor}`,
+                      cursor: "pointer",
+                      borderRadius: 14,
+                      transition: "transform 0.2s ease, box-shadow 0.2s ease",
                       position: "relative",
-                      transition: "box-shadow 0.3s ease, transform 0.3s ease",
-                      ...(isHighlighted
-                        ? {
-                            boxShadow: `0 0 0 2px ${barColor}, 0 4px 16px color-mix(in srgb, ${barColor} 20%, transparent)`,
-                            transform: "scale(1.01)",
-                          }
-                        : {}),
                     }}
+                    className="hover-card"
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                      {/* Icon */}
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                      {/* Category Icon */}
                       <div
                         style={{
-                          flexShrink: 0,
+                          width: 42,
+                          height: 42,
+                          borderRadius: 12,
+                          background: `color-mix(in srgb, ${barColor} 10%, var(--surface-0))`,
+                          border: `1px solid color-mix(in srgb, ${barColor} 25%, transparent)`,
                           display: "flex",
                           alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          marginTop: 2,
                         }}
                       >
-                        <Icon size={22} color={barColor} />
+                        <Icon size={20} color={barColor} />
                       </div>
 
-                      {/* Info */}
+                      {/* Header & Limits */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
-                            alignItems: "flex-start",
-                            marginBottom: 2,
+                            alignItems: "center",
+                            marginBottom: 4,
                           }}
                         >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                              flexWrap: "wrap",
-                            }}
-                          >
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                             <span
                               style={{
                                 fontWeight: 800,
@@ -1449,51 +1885,44 @@ export function BudgetTab({
                                 INHERITED
                               </Badge>
                             )}
-                            {/* Owner tag — only meaningful when viewing the combined "All"
-                                family profile, where budgets from multiple members are mixed
-                                together in the same category list. */}
                             {activeProfile === "all" && (
                               <Badge variant="muted" style={{ fontSize: 9 }}>
                                 {getOwnerName(b.owner || "self")}
                               </Badge>
                             )}
-                            {/* Per-Category Warning Badge */}
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: statusBadge.color,
-                                background: `color-mix(in srgb, ${statusBadge.color} 7%, transparent)`,
-                                border: `1px solid color-mix(in srgb, ${statusBadge.color} 20%, transparent)`,
-                                padding: "2px 8px",
-                                borderRadius: "var(--radius-xs)",
-                              }}
-                            >
-                              <StatusIcon size={10} />
-                              {statusBadge.label}
-                            </span>
                           </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div
-                              style={{
-                                fontFamily: "var(--font-display)",
-                                fontWeight: 900,
-                                color: over ? THEME.rust : THEME.ink,
-                                fontSize: 16,
-                              }}
-                            >
-                              {pct.toFixed(0)}%
-                            </div>
-                          </div>
+                          <span
+                            style={{
+                              fontFamily: "var(--font-display)",
+                              fontWeight: 900,
+                              color: over ? THEME.rust : THEME.ink,
+                              fontSize: 16,
+                            }}
+                          >
+                            {pct.toFixed(0)}%
+                          </span>
                         </div>
-                        <div style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
-                          <Money value={spent} variant="full" />{" "}
-                          <span style={{ fontWeight: 400, opacity: 0.7 }}>of</span>{" "}
-                          <Money value={budget} variant="full" />
-                          <span style={{ marginLeft: 8, color: over ? THEME.rust : THEME.sage }}>
+
+                        {/* Money figures */}
+                        <div
+                          style={{
+                            fontSize: 12.5,
+                            color: THEME.muted,
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span style={{ color: THEME.ink, fontWeight: 700 }}>
+                            <Money value={spent} variant="full" />
+                          </span>
+                          <span style={{ opacity: 0.6 }}>of</span>
+                          <span>
+                            <Money value={budget} variant="full" />
+                          </span>
+                          <span style={{ marginLeft: 4, color: over ? THEME.rust : THEME.sage }}>
                             {over ? (
                               <>
                                 (<Money value={spent - budget} variant="full" /> over)
@@ -1505,35 +1934,38 @@ export function BudgetTab({
                             )}
                           </span>
                         </div>
+
                         {rolledOver > 0 && (
                           <div
                             style={{
-                              fontSize: 10.5,
+                              fontSize: 11,
                               color: THEME.accent,
                               fontWeight: 700,
-                              marginTop: 2,
+                              marginTop: 4,
                               display: "flex",
                               alignItems: "center",
                               gap: 4,
                             }}
                           >
-                            <Repeat size={10} />
-                            <Money value={rolledOver} variant="full" /> rolled over from last month
+                            <Repeat size={11} />
+                            <Money value={rolledOver} variant="full" /> rolled over from previous month
                           </div>
                         )}
                       </div>
 
-                      {/* Actions */}
-                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      {/* Edit & Delete Action buttons */}
+                      <div
+                        style={{ display: "flex", gap: 2, flexShrink: 0 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setEditBudget(b)}
-                          style={{ padding: 6 }}
-                          title="Edit"
-                          aria-label={`Edit ${b.category} budget`}
+                          style={{ padding: 6, borderRadius: 6 }}
+                          title="Edit limit"
                         >
-                          <Pencil size={14} />
+                          <Pencil size={13} />
                         </Button>
                         <Button
                           variant="ghost"
@@ -1545,113 +1977,80 @@ export function BudgetTab({
                               onConfirm: () => handleRemoveBudget(b),
                             })
                           }
-                          style={{ padding: 6, color: THEME.rust }}
-                          title="Delete"
-                          aria-label={`Delete ${b.category} budget`}
+                          style={{ padding: 6, color: THEME.rust, borderRadius: 6 }}
+                          title="Delete category"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                         </Button>
                       </div>
                     </div>
 
-                    {/* Progress Bar */}
-                    <div className="progress-track" style={{ marginTop: 16, marginBottom: 12 }}>
+                    {/* Progress Track */}
+                    <div className="progress-track" style={{ marginTop: 14, marginBottom: 10, height: 7 }}>
                       <div
                         className="progress-fill"
                         style={{ width: `${Math.min(pct, 100)}%`, background: barColor }}
                       />
                     </div>
 
-                    {spent > 0 && (
-                      <div
+                    {/* Bottom Status Row */}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: 11,
+                        color: THEME.muted,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          fontSize: 11,
-                          color: THEME.muted,
-                          fontWeight: 600,
-                          opacity: 0.8,
-                        }}
-                      >
-                        <span>
-                          Day {daysPassed}/{daysInMonth} · Projected{" "}
-                          <Money value={projected} variant="full" />
-                        </span>
-                        <span style={{ color: projectedPct > 105 ? THEME.rust : THEME.sage }}>
-                          {projectedPct.toFixed(0)}% expected
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Projected Month-End Spending Alert */}
-                    {isCurrentMonth && spent > 0 && budget > 0 && projected > budget && (
-                      <div
-                        style={{
-                          display: "flex",
+                          display: "inline-flex",
                           alignItems: "center",
-                          gap: 6,
-                          fontSize: 11,
-                          marginTop: 8,
-                          padding: "8px 12px",
-                          borderRadius: 8,
-                          background: `color-mix(in srgb, ${THEME.rust} 3%, transparent)`,
-                          border: `1px solid color-mix(in srgb, ${THEME.rust} 13%, transparent)`,
-                          color: THEME.rust,
-                          fontWeight: 600,
+                          gap: 4,
+                          color: statusBadge.color,
+                          fontWeight: 700,
                         }}
                       >
-                        <Target size={12} />
-                        <span>
-                          At this pace, you'll spend <Money value={projected} variant="full" />{" "}
-                          <span style={{ fontWeight: 800 }}>
-                            (<Money value={projected - budget} variant="full" /> over budget)
-                          </span>
-                        </span>
-                      </div>
-                    )}
+                        <StatusIcon size={11} />
+                        {statusBadge.label}
+                      </span>
 
-                    {prevSpent > 0 &&
-                      (() => {
-                        const delta = spent - prevSpent;
-                        const isUp = delta > 0;
-                        return (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                              fontSize: 11,
-                              marginTop: 6,
-                              color: isUp ? THEME.rust : THEME.sage,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {isUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                            <span>
-                              {isUp ? "+" : ""}
-                              <Money value={Math.abs(delta)} variant="full" /> vs last month
-                            </span>
-                            <span style={{ color: THEME.muted, fontWeight: 400, marginLeft: 2 }}>
-                              (<Money value={prevSpent} variant="full" /> last month)
-                            </span>
-                          </div>
-                        );
-                      })()}
+                      {prevSpent > 0 && (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 3,
+                            color: spent > prevSpent ? THEME.rust : THEME.sage,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {spent > prevSpent ? (
+                            <ArrowUpRight size={12} />
+                          ) : (
+                            <ArrowDownRight size={12} />
+                          )}
+                          <Money value={Math.abs(spent - prevSpent)} variant="full" /> MoM
+                        </span>
+                      )}
+                    </div>
                   </Card>
-                  </div>
                 );
               })}
             </div>
           )}
 
-          {/* Unbudgeted Spending — categories with real spend but no budget line */}
+          {/* ── Unbudgeted Spending Section ── */}
           {totalUnbudgetedSpent > 0 && (
             <Card
               style={{
-                marginTop: 24,
-                padding: "18px 24px",
-                border: `1px dashed color-mix(in srgb, ${THEME.gold} 33%, transparent)`,
-                background: `color-mix(in srgb, ${THEME.gold} 3%, transparent)`,
+                marginTop: 28,
+                padding: "20px 24px",
+                border: `1px dashed color-mix(in srgb, ${THEME.gold} 40%, transparent)`,
+                background: `color-mix(in srgb, ${THEME.gold} 4%, var(--t-paper))`,
+                borderRadius: 16,
               }}
             >
               <div
@@ -1659,24 +2058,23 @@ export function BudgetTab({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  marginBottom: 12,
+                  marginBottom: 14,
                   flexWrap: "wrap",
                   gap: 8,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <AlertTriangle size={16} color={THEME.gold} />
-                  <span style={{ fontWeight: 800, fontSize: 14, color: THEME.ink }}>
-                    Unbudgeted Spending — <Money value={totalUnbudgetedSpent} variant="full" />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <AlertTriangle size={18} color={THEME.gold} />
+                  <span style={{ fontWeight: 800, fontSize: 14.5, color: THEME.ink }}>
+                    Unbudgeted Spending Detected — <Money value={totalUnbudgetedSpent} variant="full" />
                   </span>
                 </div>
                 <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>
                   {Object.keys(unbudgetedSpending).length}{" "}
-                  {Object.keys(unbudgetedSpending).length === 1 ? "category" : "categories"} not
-                  tracked
+                  {Object.keys(unbudgetedSpending).length === 1 ? "category" : "categories"} untracked
                 </span>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                 {Object.entries(unbudgetedSpending)
                   .sort((a, b) => (b[1] as number) - (a[1] as number))
                   .map(([cat, amt]) => {
@@ -1684,41 +2082,48 @@ export function BudgetTab({
                     return (
                       <div
                         key={cat}
+                        onClick={() => setSelectedCategoryDetail(cat)}
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: 6,
-                          padding: "6px 12px",
-                          borderRadius: 8,
-                          background: "rgba(128,128,128,0.06)",
+                          gap: 8,
+                          padding: "8px 14px",
+                          borderRadius: 10,
+                          background: "var(--t-paper)",
                           border: "1px solid var(--t-line)",
-                          fontSize: 12,
+                          fontSize: 12.5,
                           fontWeight: 700,
                           color: THEME.ink,
+                          cursor: "pointer",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                         }}
+                        title="Click to view transactions or set a budget"
                       >
-                        <Icon size={13} color={THEME.gold} />
+                        <Icon size={14} color={THEME.gold} />
                         <span>{cat}</span>
                         <span style={{ color: THEME.gold }}>
                           <Money value={amt as number} variant="full" />
                         </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditBudget({ category: cat, monthly: amt, owner: "self" });
+                          }}
+                          style={{
+                            padding: "2px 6px",
+                            fontSize: 10,
+                            borderRadius: 6,
+                            border: `1px solid color-mix(in srgb, ${THEME.accent} 40%, transparent)`,
+                            color: THEME.accent,
+                          }}
+                        >
+                          + Set Budget
+                        </Button>
                       </div>
                     );
                   })}
-              </div>
-              <div
-                style={{
-                  marginTop: 10,
-                  fontSize: 11,
-                  color: THEME.muted,
-                  fontWeight: 500,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                <HelpCircle size={11} />
-                Add budget categories for these to get a full spending picture.
               </div>
             </Card>
           )}
@@ -1726,26 +2131,27 @@ export function BudgetTab({
       )}
 
       {/* ======================================================== */}
-      {/*               2. FIXED & RECURRING EXPENSES TAB          */}
+      {/*               2. FIXED & RECURRING EXPENSES VIEW         */}
       {/* ======================================================== */}
       {activeSubTab === "recurring" && (
         <>
           <SectionTitle
-            sub="Register EMIs, maid salaries, house rent, and utility bills that repeat over time"
+            sub="Track EMIs, salaries, house rent, and utility commitments with day-of-month schedules"
             rightElement={
               <Button
                 onClick={() => setShowAddRecurring(true)}
                 variant="accent"
                 icon={<Plus size={14} />}
+                style={{ fontWeight: 700 }}
               >
                 Add Recurring Expense
               </Button>
             }
           >
-            Fixed & Recurring Expenses
+            Fixed & Recurring Outflows
           </SectionTitle>
 
-          {/* Stats Tiles */}
+          {/* Stats Summary Tiles */}
           <div
             style={{
               display: "grid",
@@ -1783,7 +2189,7 @@ export function BudgetTab({
                 Icon: CheckCircle2,
               },
               {
-                label: "Overdue / Unpaid",
+                label: "Overdue / Pending",
                 value: String(recurringStats.overdueCount),
                 numericValue: recurringStats.overdueCount,
                 formatValue: (n: number) => Math.round(n).toString(),
@@ -1805,10 +2211,86 @@ export function BudgetTab({
             ))}
           </div>
 
-          {activeRecurringExpenses.length === 0 ? (
+          {/* Search and Filters for Recurring */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ position: "relative", minWidth: 220, flex: "1 1 220px", maxWidth: 360 }}>
+              <Search
+                size={14}
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: THEME.muted,
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search recurring commitments..."
+                value={recurringSearch}
+                onChange={(e) => setRecurringSearch(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px 8px 34px",
+                  borderRadius: 10,
+                  border: "1px solid var(--t-line)",
+                  background: "var(--surface-0)",
+                  color: THEME.ink,
+                  fontSize: 13,
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {(
+                [
+                  { id: "all", label: `All (${activeRecurringExpenses.length})`, color: THEME.accent },
+                  { id: "due", label: "Due / Pending", color: THEME.gold },
+                  { id: "paid", label: "Paid", color: THEME.sage },
+                  { id: "overdue", label: "Overdue", color: THEME.rust },
+                  { id: "paused", label: "Paused", color: THEME.muted },
+                ] as const
+              ).map(({ id, label, color }) => (
+                <button
+                  key={id}
+                  onClick={() => setRecurringStatusFilter(id)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: "1px solid",
+                    borderColor:
+                      recurringStatusFilter === id
+                        ? (color || THEME.accent)
+                        : "var(--t-line)",
+                    background:
+                      recurringStatusFilter === id
+                        ? `color-mix(in srgb, ${color || THEME.accent} 12%, transparent)`
+                        : "var(--surface-0)",
+                    color: recurringStatusFilter === id ? (color || THEME.accent) : THEME.muted,
+                    cursor: "pointer",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredRecurring.length === 0 ? (
             <EmptyState
               icon={Repeat}
-              title="No Recurring Expenses Active"
+              title="No Recurring Expenses Found"
               description="Define regular bills, rent, household wages, gym memberships or custom EMIs and quick-post them directly as ledger transactions."
               pills={["Fixed Expenses", "Custom Ranges", "Quick Record", "Ledger Auto-Match"]}
               buttonLabel="Add Recurring Expense"
@@ -1818,11 +2300,11 @@ export function BudgetTab({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
                 gap: 16,
               }}
             >
-              {activeRecurringExpenses.map((re: any) => {
+              {filteredRecurring.map((re: any) => {
                 const match = recurringPaymentMatches[re.id];
                 const hasPaid = !!match;
 
@@ -1832,27 +2314,26 @@ export function BudgetTab({
 
                 let statusText = "Upcoming";
                 let statusColor = THEME.gold;
-                let statusBg = `color-mix(in srgb, ${THEME.gold} 8%, transparent)`;
+                let statusBg = `color-mix(in srgb, ${THEME.gold} 10%, transparent)`;
 
                 if (hasPaid) {
                   statusText = "Paid";
                   statusColor = THEME.sage;
-                  statusBg = `color-mix(in srgb, ${THEME.sage} 8%, transparent)`;
+                  statusBg = `color-mix(in srgb, ${THEME.sage} 10%, transparent)`;
                 } else if (!re.isActive) {
                   statusText = "Paused";
                   statusColor = THEME.muted;
-                  statusBg = `color-mix(in srgb, ${THEME.muted} 8%, transparent)`;
+                  statusBg = `color-mix(in srgb, ${THEME.muted} 10%, transparent)`;
                 } else {
-                  // Active and Unpaid
                   if (selectedMonth < curMonthStr) {
                     statusText = "Unpaid";
                     statusColor = THEME.rust;
-                    statusBg = `color-mix(in srgb, ${THEME.rust} 8%, transparent)`;
+                    statusBg = `color-mix(in srgb, ${THEME.rust} 10%, transparent)`;
                   } else if (selectedMonth === curMonthStr) {
                     if (todayDay > Number(re.dueDay)) {
                       statusText = "Overdue";
                       statusColor = THEME.rust;
-                      statusBg = `color-mix(in srgb, ${THEME.rust} 8%, transparent)`;
+                      statusBg = `color-mix(in srgb, ${THEME.rust} 10%, transparent)`;
                     } else {
                       const daysLeft = Number(re.dueDay) - todayDay;
                       statusText =
@@ -1862,13 +2343,12 @@ export function BudgetTab({
                             ? "Due Tomorrow"
                             : `Due in ${daysLeft} days`;
                       statusColor = THEME.gold;
-                      statusBg = `color-mix(in srgb, ${THEME.gold} 8%, transparent)`;
+                      statusBg = `color-mix(in srgb, ${THEME.gold} 10%, transparent)`;
                     }
                   } else {
-                    // Future month
                     statusText = "Scheduled";
                     statusColor = THEME.accent;
-                    statusBg = `color-mix(in srgb, ${THEME.accent} 8%, transparent)`;
+                    statusBg = `color-mix(in srgb, ${THEME.accent} 10%, transparent)`;
                   }
                 }
 
@@ -1880,37 +2360,41 @@ export function BudgetTab({
                     style={{
                       padding: "18px 20px",
                       borderTop: `3px solid ${re.isActive ? (hasPaid ? THEME.sage : statusColor) : THEME.line}`,
-                      opacity: re.isActive ? 1 : 0.7,
+                      opacity: re.isActive ? 1 : 0.75,
+                      borderRadius: 14,
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                      {/* Category icon */}
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                      {/* Icon */}
                       <div
                         style={{
-                          flexShrink: 0,
+                          width: 40,
+                          height: 40,
+                          borderRadius: 12,
+                          background: statusBg,
                           display: "flex",
                           alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          marginTop: 2,
                         }}
                       >
                         {(() => {
-                          const CatIcon =
-                            re.category === "Rent"
-                              ? Home
-                              : re.category === "EMI"
-                                ? CreditCard
-                                : re.category === "Bills"
-                                  ? Zap
-                                  : Wallet;
-                          return (
-                            <CatIcon size={20} color={hasPaid ? THEME.sage : statusColor} />
-                          );
+                          const CatIcon = getCatIcon(re.category);
+                          return <CatIcon size={20} color={statusColor} />;
                         })()}
                       </div>
 
                       {/* Info */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
-                          style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            marginBottom: 4,
+                            flexWrap: "wrap",
+                          }}
                         >
                           <span
                             title={re.name}
@@ -1919,9 +2403,6 @@ export function BudgetTab({
                               fontSize: 16,
                               color: THEME.ink,
                               letterSpacing: "-0.01em",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
                             }}
                           >
                             {re.name}
@@ -1949,7 +2430,7 @@ export function BudgetTab({
 
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: 12.5,
                             color: THEME.muted,
                             fontWeight: 600,
                             display: "flex",
@@ -1959,7 +2440,7 @@ export function BudgetTab({
                             alignItems: "center",
                           }}
                         >
-                          <span style={{ color: THEME.ink, fontWeight: 800 }}>
+                          <span style={{ color: THEME.ink, fontWeight: 800, fontSize: 14 }}>
                             <Money value={re.amount} variant="full" />
                           </span>
                           <span style={{ opacity: 0.4 }}>·</span>
@@ -1977,13 +2458,13 @@ export function BudgetTab({
                                   gap: 3,
                                 }}
                               >
-                                <Landmark size={10} /> {bank.bankName}
+                                <Landmark size={11} /> {bank.bankName}
                               </span>
                             </>
                           )}
                         </div>
 
-                        {/* Repeat Dates Range */}
+                        {/* Repeat Range */}
                         <div
                           style={{
                             fontSize: 11,
@@ -1992,10 +2473,9 @@ export function BudgetTab({
                             display: "flex",
                             alignItems: "center",
                             gap: 4,
-                            opacity: 0.9,
                           }}
                         >
-                          <Calendar size={10} />
+                          <Calendar size={11} />
                           <span>{fmtDate(re.startDate)}</span>
                           {re.endDate ? (
                             <>
@@ -2016,22 +2496,19 @@ export function BudgetTab({
                               marginTop: 8,
                               fontSize: 11,
                               padding: "6px 10px",
-                              borderRadius: 6,
-                              background: `color-mix(in srgb, ${THEME.sage} 2%, transparent)`,
-                              border: `1px solid color-mix(in srgb, ${THEME.sage} 13%, transparent)`,
+                              borderRadius: 8,
+                              background: `color-mix(in srgb, ${THEME.sage} 6%, transparent)`,
+                              border: `1px solid color-mix(in srgb, ${THEME.sage} 20%, transparent)`,
                               color: THEME.sage,
-                              fontWeight: 600,
+                              fontWeight: 700,
                               display: "flex",
                               alignItems: "center",
                               gap: 5,
                             }}
                           >
-                            <CheckCircle2 size={11} />
-                            <span>Matched:</span>
-                            <span
-                              style={{ textDecoration: "underline", cursor: "pointer" }}
-                              title={`Recorded on ${match.date}: ${match.note}`}
-                            >
+                            <CheckCircle2 size={12} />
+                            <span>Matched Ledger:</span>
+                            <span>
                               <Money value={match.amount} variant="full" /> on {fmtDate(match.date)}
                             </span>
                           </div>
@@ -2049,7 +2526,6 @@ export function BudgetTab({
                         }}
                       >
                         <div style={{ display: "flex", gap: 2 }}>
-                          {/* Pause / Play */}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -2058,9 +2534,6 @@ export function BudgetTab({
                             disabled={togglingRecurringId === re.id || removingRecurringId === re.id}
                             style={{ padding: 6, color: re.isActive ? THEME.gold : THEME.sage }}
                             title={re.isActive ? "Pause" : "Resume"}
-                            aria-label={
-                              re.isActive ? `Pause ${re.name}` : `Resume ${re.name}`
-                            }
                           >
                             {re.isActive ? <Pause size={14} /> : <Play size={14} />}
                           </Button>
@@ -2070,7 +2543,6 @@ export function BudgetTab({
                             onClick={() => setEditRecurring(re)}
                             style={{ padding: 6 }}
                             title="Edit"
-                            aria-label={`Edit ${re.name}`}
                           >
                             <Pencil size={14} />
                           </Button>
@@ -2087,13 +2559,12 @@ export function BudgetTab({
                             disabled={togglingRecurringId === re.id || removingRecurringId === re.id}
                             style={{ padding: 6, color: THEME.rust }}
                             title="Delete"
-                            aria-label={`Delete ${re.name}`}
                           >
                             <Trash2 size={14} />
                           </Button>
                         </div>
 
-                        {/* Quick Post Button */}
+                        {/* Quick Pay Button */}
                         {re.isActive && !hasPaid && selectedMonth <= curMonthStr && (
                           <Button
                             variant="accent"
@@ -2102,7 +2573,7 @@ export function BudgetTab({
                             loading={postingId === re.id}
                             disabled={postingId === re.id}
                             style={{
-                              padding: "4px 8px",
+                              padding: "4px 10px",
                               fontSize: 11,
                               borderRadius: 6,
                               background:
@@ -2126,17 +2597,17 @@ export function BudgetTab({
             </div>
           )}
 
-          {/* ── Auto-derived Rental Commitments ── */}
+          {/* ── Rental Commitments ── */}
           {(state.rentedProperties || []).filter((p: any) => p.isActive !== false).length > 0 && (
             <div style={{ marginTop: 36 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <Home size={15} color={THEME.rust} />
-                <span style={{ fontSize: 13, fontWeight: 800, color: THEME.ink }}>
+                <Home size={16} color={THEME.rust} />
+                <span style={{ fontSize: 14, fontWeight: 800, color: THEME.ink }}>
                   Rental Commitments · {selectedMonthLabel}
                 </span>
                 <span
                   style={{
-                    fontSize: 10,
+                    fontSize: 10.5,
                     color: THEME.muted,
                     background: "rgba(128,128,128,0.08)",
                     padding: "2px 8px",
@@ -2162,7 +2633,6 @@ export function BudgetTab({
                       .filter((pay: any) => pay.date && pay.date.startsWith(selectedMonth))
                       .reduce((s: number, pay: any) => s + Number(pay.amount || 0), 0);
                     const isPaid = paidThisMonth > 0;
-                    const isOverpaid = isPaid && paidThisMonth > effectiveRent * 1.01;
                     const now = new Date();
                     const curMonthStr = today().slice(0, 7);
                     const dueDay = Number(p.dueDay || 5);
@@ -2176,64 +2646,34 @@ export function BudgetTab({
                       ? `Paid · ${rentDisplay(paidThisMonth)}`
                       : isOverdue
                         ? `Overdue · ${rentDisplay(effectiveRent)} due`
-                        : `Due on ${dueDay}${dueDay % 10 === 1 && dueDay !== 11 ? "st" : dueDay % 10 === 2 && dueDay !== 12 ? "nd" : dueDay % 10 === 3 && dueDay !== 13 ? "rd" : "th"} · ${rentDisplay(effectiveRent)}`;
-
-                    // Tier info
-                    const tiers = p.escalationTiers;
-                    const tierIdx =
-                      tiers?.length > 1
-                        ? ((): number => {
-                            if (!p.agreementStart) return -1;
-                            const [refY, refM] = selectedMonth.split("-").map(Number);
-                            const [sY, sM] = p.agreementStart.slice(0, 7).split("-").map(Number);
-                            const elapsed = (refY - sY) * 12 + (refM - sM);
-                            let cum = 0;
-                            for (let i = 0; i < tiers.length; i++) {
-                              cum += Number(tiers[i].durationMonths || 12);
-                              if (elapsed < cum) return i;
-                            }
-                            return tiers.length - 1;
-                          })()
-                        : -1;
+                        : `Due on ${dueDay}th · ${rentDisplay(effectiveRent)}`;
 
                     return (
                       <div
                         key={p.id}
                         style={{
-                          padding: "14px 16px",
-                          borderRadius: 12,
-                          background: `color-mix(in srgb, ${statusColor} 4%, transparent)`,
+                          padding: "16px",
+                          borderRadius: 14,
+                          background: `color-mix(in srgb, ${statusColor} 4%, var(--surface-0))`,
                           border: `1px solid color-mix(in srgb, ${statusColor} 20%, transparent)`,
                           display: "flex",
                           alignItems: "center",
                           gap: 14,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", color: statusColor, flexShrink: 0 }}>
+                        <div style={{ color: statusColor, flexShrink: 0 }}>
                           <Home size={22} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 800, fontSize: 14, color: THEME.ink }}>
+                          <div style={{ fontWeight: 800, fontSize: 14.5, color: THEME.ink }}>
                             {p.propertyName}
                           </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: THEME.muted,
-                              fontWeight: 600,
-                              marginTop: 2,
-                            }}
-                          >
+                          <div style={{ fontSize: 11.5, color: THEME.muted, fontWeight: 600 }}>
                             {p.landlordName || p.landlords?.[0]?.name || "Landlord"}
-                            {tierIdx >= 0 && tiers && (
-                              <span style={{ marginLeft: 6, color: THEME.accent, fontWeight: 700 }}>
-                                · Y{tierIdx + 1}: <Money value={tiers[tierIdx].amount} variant="full" />/mo
-                              </span>
-                            )}
                           </div>
                           <div
                             style={{
-                              fontSize: 11,
+                              fontSize: 11.5,
                               fontWeight: 700,
                               color: statusColor,
                               marginTop: 4,
@@ -2241,85 +2681,574 @@ export function BudgetTab({
                           >
                             {statusText}
                           </div>
-                          {isOverpaid && (
-                            <div
-                              style={{
-                                fontSize: 10,
-                                color: THEME.gold,
-                                fontWeight: 600,
-                                marginTop: 2,
-                              }}
-                            >
-                              Paid <Money value={paidThisMonth - effectiveRent} variant="full" /> extra this
-                              month
-                            </div>
-                          )}
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div
                             style={{
                               fontFamily: "var(--font-display)",
-                              fontSize: 16,
+                              fontSize: 17,
                               fontWeight: 800,
                               color: statusColor,
                             }}
                           >
                             <Money value={effectiveRent} variant="full" />
                           </div>
-                          <div
-                            style={{
-                              fontSize: 9,
-                              color: THEME.muted,
-                              fontWeight: 700,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.04em",
-                            }}
-                          >
-                            per month
+                          <div style={{ fontSize: 10, color: THEME.muted, fontWeight: 700 }}>
+                            / month
                           </div>
                         </div>
                       </div>
                     );
                   })}
               </div>
-              {/* Total commitment footer */}
-              {(state.rentedProperties || []).filter((p: any) => p.isActive !== false).length > 1 &&
-                (() => {
-                  const total = (state.rentedProperties || [])
-                    .filter((p: any) => p.isActive !== false)
-                    .reduce((s: number, p: any) => s + getEffectiveRent(p, selectedMonth), 0);
-                  return (
-                    <div
-                      style={{
-                        marginTop: 10,
-                        padding: "10px 14px",
-                        borderRadius: 10,
-                        background: "rgba(128,128,128,0.04)",
-                        border: `1px solid ${THEME.line}`,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span style={{ fontSize: 12, fontWeight: 700, color: THEME.muted }}>
-                        Total rental commitment this month
-                      </span>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          fontSize: 14,
-                          fontWeight: 800,
-                          color: THEME.rust,
-                        }}
-                      >
-                        <Money value={total} variant="full" />
-                      </span>
-                    </div>
-                  );
-                })()}
             </div>
           )}
         </>
+      )}
+
+      {/* ======================================================== */}
+      {/*               3. ANALYTICS & TRENDS VIEW                 */}
+      {/* ======================================================== */}
+      {activeSubTab === "analytics" && (
+        <>
+          <SectionTitle sub="Side-by-side budget vs actual comparison and category distribution trends">
+            Budget Analytics & Trends
+          </SectionTitle>
+
+          {/* Charts Grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+              gap: 20,
+              marginBottom: 28,
+            }}
+          >
+            {/* 1. Budget vs Actual Comparison Chart */}
+            <Card style={{ padding: "20px 24px", borderRadius: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: THEME.ink, marginBottom: 16 }}>
+                Budget Target vs Actual Spend ({selectedMonthLabel})
+              </div>
+              {budgetsToUse.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: THEME.muted, fontSize: 13 }}>
+                  No budget categories set for this month.
+                </div>
+              ) : (
+                <div style={{ width: "100%", height: 320 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={budgetsToUse.map((b: any) => ({
+                        category: b.category,
+                        Budget: getEffectiveBudget(b),
+                        Actual: monthSpending[b.category] || 0,
+                      }))}
+                      margin={{ top: 10, right: 10, left: -10, bottom: 25 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--t-line)" opacity={0.5} />
+                      <XAxis
+                        dataKey="category"
+                        stroke={THEME.muted}
+                        fontSize={11}
+                        angle={-25}
+                        textAnchor="end"
+                        interval={0}
+                      />
+                      <YAxis
+                        stroke={THEME.muted}
+                        fontSize={11}
+                        tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                      />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div
+                                style={{
+                                  background: "var(--t-paper)",
+                                  border: "1px solid var(--t-line)",
+                                  borderRadius: 10,
+                                  padding: "10px 14px",
+                                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                                }}
+                              >
+                                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>
+                                  {label}
+                                </div>
+                                {payload.map((entry: any, index: number) => (
+                                  <div
+                                    key={`item-${index}`}
+                                    style={{
+                                      fontSize: 12,
+                                      color: entry.color,
+                                      fontWeight: 600,
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      gap: 16,
+                                    }}
+                                  >
+                                    <span>{entry.name}:</span>
+                                    <span>{fmtINRFull(entry.value)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+                      <Bar dataKey="Budget" fill={THEME.accent} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Actual" fill={THEME.sage} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </Card>
+
+            {/* 2. Spend Allocation Donut */}
+            <Card style={{ padding: "20px 24px", borderRadius: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: THEME.ink, marginBottom: 16 }}>
+                Spending Allocation by Category
+              </div>
+              {Object.keys(monthSpending).length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: THEME.muted, fontSize: 13 }}>
+                  No spending recorded for this month.
+                </div>
+              ) : (
+                <div style={{ width: "100%", height: 320 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={Object.entries(monthSpending).map(([cat, amt]) => ({
+                          name: cat,
+                          value: amt as number,
+                        }))}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={65}
+                        outerRadius={105}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {Object.keys(monthSpending).map((_, index) => {
+                          const COLORS = [
+                            THEME.accent,
+                            THEME.sage,
+                            THEME.gold,
+                            THEME.rust,
+                            "#8b5cf6",
+                            "#ec4899",
+                            "#06b6d4",
+                            "#14b8a6",
+                            "#f97316",
+                          ];
+                          return (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          );
+                        })}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any) => [fmtINRFull(Number(val)), "Spent"]}
+                        contentStyle={{
+                          background: "var(--t-paper)",
+                          border: "1px solid var(--t-line)",
+                          borderRadius: 10,
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* 3. Multi-Month Trend Table */}
+          <Card style={{ padding: "20px 24px", borderRadius: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: THEME.ink, marginBottom: 16 }}>
+              3-Month Historical Spending vs Current Month
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--t-line)", textAlign: "left" }}>
+                    <th style={{ padding: "10px 12px", color: THEME.muted, fontWeight: 700 }}>
+                      Category
+                    </th>
+                    {historicalAverages.prevMonths.map((m) => (
+                      <th
+                        key={m}
+                        style={{
+                          padding: "10px 12px",
+                          color: THEME.muted,
+                          fontWeight: 700,
+                          textAlign: "right",
+                        }}
+                      >
+                        {new Date(m + "-01").toLocaleDateString("en-IN", { month: "short", year: "2-digit" })}
+                      </th>
+                    ))}
+                    <th
+                      style={{
+                        padding: "10px 12px",
+                        color: THEME.ink,
+                        fontWeight: 800,
+                        textAlign: "right",
+                      }}
+                    >
+                      {selectedMonthLabel} (Current)
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px 12px",
+                        color: THEME.accent,
+                        fontWeight: 700,
+                        textAlign: "right",
+                      }}
+                    >
+                      3-Mo Avg
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from(
+                    new Set([
+                      ...budgetsToUse.map((b: any) => b.category),
+                      ...Object.keys(monthSpending),
+                      ...Object.keys(historicalAverages.averages),
+                    ])
+                  )
+                    .sort()
+                    .map((cat) => {
+                      const currentVal = monthSpending[cat] || 0;
+                      const avgData = historicalAverages.averages[cat];
+                      const avgVal = avgData?.avg || 0;
+                      const Icon = getCatIcon(cat);
+
+                      return (
+                        <tr
+                          key={cat}
+                          style={{
+                            borderBottom: "1px solid var(--t-line)",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          <td style={{ padding: "10px 12px", fontWeight: 700, color: THEME.ink }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Icon size={14} color={THEME.accent} />
+                              {cat}
+                            </div>
+                          </td>
+                          {historicalAverages.prevMonths.map((m) => (
+                            <td
+                              key={m}
+                              style={{
+                                padding: "10px 12px",
+                                textAlign: "right",
+                                color: THEME.muted,
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
+                              <Money value={avgData?.byMonth?.[m] || 0} variant="full" />
+                            </td>
+                          ))}
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              textAlign: "right",
+                              fontWeight: 800,
+                              color: currentVal > (avgVal * 1.2) && avgVal > 0 ? THEME.rust : THEME.ink,
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            <Money value={currentVal} variant="full" />
+                          </td>
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              textAlign: "right",
+                              fontWeight: 700,
+                              color: THEME.accent,
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            <Money value={avgVal} variant="full" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {/* ======================================================== */}
+      {/*         CATEGORY TRANSACTION DRILLDOWN DRAWER            */}
+      {/* ======================================================== */}
+      {selectedCategoryDetail && (
+        <Drawer
+          title={`${selectedCategoryDetail} — Details & Transactions`}
+          onClose={() => {
+            setSelectedCategoryDetail(null);
+            setDrawerSearch("");
+          }}
+        >
+          {(() => {
+            const spent = monthSpending[selectedCategoryDetail] || 0;
+            const b = activeDetailBudget;
+            const budget = b ? getEffectiveBudget(b) : 0;
+            const rolledOver = b ? getRolloverAmount(b) : 0;
+            const remaining = budget - spent;
+            const pct = budget > 0 ? (spent / budget) * 100 : 0;
+            const histAvg = historicalAverages.averages[selectedCategoryDetail]?.avg || 0;
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                {/* Metric Strip */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, 1fr)",
+                    gap: 10,
+                    padding: "14px",
+                    borderRadius: 12,
+                    background: "var(--surface-0)",
+                    border: "1px solid var(--t-line)",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>
+                      Budget Target
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: THEME.accent }}>
+                      {budget > 0 ? <Money value={budget} variant="full" /> : "No Limit"}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>
+                      Total Spent
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: budget > 0 && spent > budget ? THEME.rust : THEME.ink,
+                      }}
+                    >
+                      <Money value={spent} variant="full" />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>
+                      Remaining / Variance
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: remaining >= 0 ? THEME.sage : THEME.rust,
+                      }}
+                    >
+                      {budget > 0 ? (
+                        remaining >= 0 ? (
+                          <Money value={remaining} variant="full" />
+                        ) : (
+                          <>
+                            -<Money value={Math.abs(remaining)} variant="full" />
+                          </>
+                        )
+                      ) : (
+                        "N/A"
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>
+                      3-Mo Average
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: THEME.muted }}>
+                      <Money value={histAvg} variant="full" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rollover notice */}
+                {rolledOver > 0 && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: THEME.accent,
+                      background: `color-mix(in srgb, ${THEME.accent} 8%, transparent)`,
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <Repeat size={14} />
+                    <span>
+                      Includes <Money value={rolledOver} variant="full" /> carried forward from last month
+                    </span>
+                  </div>
+                )}
+
+                {/* Edit Budget Shortcut */}
+                <div style={{ display: "flex", gap: 8 }}>
+                  {b ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditBudget(b)}
+                      icon={<Pencil size={13} />}
+                      style={{ border: "1px solid var(--t-line)", borderRadius: 8, fontSize: 12 }}
+                    >
+                      Edit Budget Limit
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="accent"
+                      size="sm"
+                      onClick={() =>
+                        setEditBudget({
+                          category: selectedCategoryDetail,
+                          monthly: spent,
+                          owner: "self",
+                        })
+                      }
+                      icon={<Plus size={13} />}
+                      style={{ borderRadius: 8, fontSize: 12 }}
+                    >
+                      Set Monthly Budget
+                    </Button>
+                  )}
+                </div>
+
+                {/* Transactions Section */}
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 800, color: THEME.ink }}>
+                      Transactions in {selectedMonthLabel} ({categoryTransactions.length})
+                    </span>
+                  </div>
+
+                  {/* Drawer search */}
+                  {categoryTransactions.length > 5 && (
+                    <div style={{ position: "relative", marginBottom: 12 }}>
+                      <Search
+                        size={13}
+                        style={{
+                          position: "absolute",
+                          left: 10,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: THEME.muted,
+                        }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Filter transactions in this category..."
+                        value={drawerSearch}
+                        onChange={(e) => setDrawerSearch(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "6px 10px 6px 30px",
+                          borderRadius: 8,
+                          border: "1px solid var(--t-line)",
+                          background: "var(--surface-0)",
+                          color: THEME.ink,
+                          fontSize: 12,
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {filteredCategoryTransactions.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "30px 20px",
+                        textAlign: "center",
+                        color: THEME.muted,
+                        fontSize: 13,
+                        background: "var(--surface-0)",
+                        borderRadius: 12,
+                        border: "1px dashed var(--t-line)",
+                      }}
+                    >
+                      No debit transactions recorded for this category in {selectedMonthLabel}.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {filteredCategoryTransactions.map((t: any) => {
+                        const bank = state.bankAccounts?.find((a: any) => a.id === t.accountId);
+                        return (
+                          <div
+                            key={t.id}
+                            style={{
+                              padding: "10px 14px",
+                              borderRadius: 10,
+                              background: "var(--surface-0)",
+                              border: "1px solid var(--t-line)",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 13, color: THEME.ink }}>
+                                {t.note || "Expense"}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: THEME.muted,
+                                  display: "flex",
+                                  gap: 6,
+                                  alignItems: "center",
+                                  marginTop: 2,
+                                }}
+                              >
+                                <span>{fmtDate(t.date)}</span>
+                                {bank && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{bank.bankName}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-display)",
+                                fontWeight: 800,
+                                fontSize: 14,
+                                color: THEME.rust,
+                              }}
+                            >
+                              -<Money value={t.amount} variant="full" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </Drawer>
       )}
 
       {/* ======================================================== */}
@@ -2373,6 +3302,7 @@ export function BudgetTab({
           saving={savingRecurringEdit}
         />
       )}
+
       {confirmAction && (
         <ConfirmDialog
           message={confirmAction.message}
@@ -2399,11 +3329,8 @@ export function BudgetModal({
   const { transactionCategories: allCats, familyProfiles } = useMasterData();
   const availableCats = allCats.filter((c: string) => !existing.includes(c));
   const defaultCat = initialValues?.category || availableCats[0] || allCats[0];
-  // Default the owner to whichever family profile is currently active, so a budget
-  // added while viewing e.g. "Wife" doesn't silently get owner="self" and vanish
-  // from that member's filtered view (the per-profile filter in useMetrics.ts
-  // matches on exact owner id).
   const defaultOwner = activeProfile !== "all" ? activeProfile : "self";
+
   const [f, setF] = useState(
     initialValues
       ? {
@@ -2500,9 +3427,8 @@ export function RecurringModal({
   saving = false,
 }: any) {
   const { transactionCategories: cats, familyProfiles } = useMasterData();
-  // Default the owner to whichever family profile is currently active — matches
-  // the fix in BudgetModal above (see comment there for why this matters).
   const defaultOwner = activeProfile !== "all" ? activeProfile : "self";
+
   const [f, setF] = useState(
     initialValues
       ? {
